@@ -22,6 +22,7 @@ export default function LoginScreen() {
   const { setCurrentAppUser, setUserTeams, darkMode } = useStore();
   const [loading, setLoading] = useState(false);
   const [googleModalVisible, setGoogleModalVisible] = useState(false);
+  const [isNativeAvailable, setIsNativeAvailable] = useState(true);
   
   // Custom email option
   const [customEmail, setCustomEmail] = useState('');
@@ -37,8 +38,10 @@ export default function LoginScreen() {
         webClientId: '20947220033-msh063bmdch7mrc0v868t00b5220c5k4.apps.googleusercontent.com',
         offlineAccess: true,
       });
+      setIsNativeAvailable(true);
     } catch (e) {
       console.log('GoogleSignin config bypassed (Expo Go):', e);
+      setIsNativeAvailable(false);
     }
   }, []);
 
@@ -68,6 +71,12 @@ export default function LoginScreen() {
   };
 
   const handleGoogleSignInNative = async () => {
+    if (!isNativeAvailable) {
+      // In development / Expo Go, open manual input modal directly
+      setGoogleModalVisible(true);
+      return;
+    }
+
     try {
       setLoading(true);
       await GoogleSignin.hasPlayServices();
@@ -90,14 +99,14 @@ export default function LoginScreen() {
     } catch (error: any) {
       console.log('Native Google Sign-In Error:', error);
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-        // User cancelled
+        // User cancelled, do nothing
       } else if (error.code === statusCodes.IN_PROGRESS) {
         // Operation in progress
       } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
         Alert.alert('Error', 'Google Play Services are not available or outdated.');
       } else {
-        // Fallback to manual custom Gmail entry if native sign-in is not supported (e.g. inside Expo Go)
-        setGoogleModalVisible(true);
+        // Display the actual Google API error so we know if client credentials are not configured properly
+        Alert.alert('Google Sign-In Failed', error.message || 'Failed to authenticate with Google. Make sure SHA-1 is configured in Firebase.');
       }
     } finally {
       setLoading(false);

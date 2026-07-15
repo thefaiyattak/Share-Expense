@@ -11,6 +11,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 
 import { authService } from './src/services/authService';
 import { expenseService } from './src/services/expenseService';
@@ -162,6 +163,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
+        <StatusBar style={darkMode ? 'light' : 'dark'} />
         <NavigationContainer theme={navigationTheme}>
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             {currentAppUser ? (
