@@ -6,7 +6,9 @@ import {
   updatePassword,
   reauthenticateWithCredential,
   EmailAuthProvider,
-  updateEmail
+  updateEmail,
+  GoogleAuthProvider,
+  signInWithCredential
 } from 'firebase/auth';
 import { 
   doc, 
@@ -35,18 +37,31 @@ export const authService = {
 
   getCurrentUser: () => auth.currentUser,
 
-  signInWithGoogle: async (email: string, displayName: string): Promise<{ user: AppUser | null; isNew: boolean }> => {
-    const mockPassword = `GoogleAuthStub_${email.split('@')[0]}_SuperSecretPass!`;
+  signInWithGoogle: async (email: string, displayName: string, idToken?: string): Promise<{ user: AppUser | null; isNew: boolean }> => {
     let cred;
     let isNew = false;
-    try {
-      cred = await signInWithEmailAndPassword(auth, email, mockPassword);
-    } catch (e: any) {
-      if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential' || e.code === 'auth/invalid-email') {
-        cred = await createUserWithEmailAndPassword(auth, email, mockPassword);
-        isNew = true;
-      } else {
-        throw e;
+
+    if (idToken) {
+      const credential = GoogleAuthProvider.credential(idToken);
+      cred = await signInWithCredential(auth, credential);
+    } else {
+      const mockPassword = `GoogleAuthStub_${email.split('@')[0]}_SuperSecretPass!`;
+      try {
+        cred = await signInWithEmailAndPassword(auth, email, mockPassword);
+      } catch (e: any) {
+        if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential' || e.code === 'auth/invalid-email') {
+          try {
+            cred = await createUserWithEmailAndPassword(auth, email, mockPassword);
+            isNew = true;
+          } catch (createErr: any) {
+            if (createErr.code === 'auth/email-already-in-use') {
+              throw new Error('This Gmail is already registered in Firebase with a different password. Please delete the user from Firebase Auth Console to register it via Gmail login.');
+            }
+            throw createErr;
+          }
+        } else {
+          throw e;
+        }
       }
     }
 
