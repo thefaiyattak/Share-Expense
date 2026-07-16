@@ -56,6 +56,7 @@ export default function SettingsScreen() {
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [editName, setEditName] = useState(currentAppUser?.name || '');
   const [profileImageUri, setProfileImageUri] = useState(currentAppUser?.profileImageUrl || '');
+  const [aboutModalVisible, setAboutModalVisible] = useState(false);
 
   // Group settings
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
@@ -514,7 +515,7 @@ export default function SettingsScreen() {
         <Text style={styles.sectionHeaderLabel}>About</Text>
         <View style={styles.sectionContent}>
           {renderItem('information-circle-outline', 'About app', () => {
-            Alert.alert('Share Expense', 'Version 1.0.0\nDeveloped by: fyntech');
+            setAboutModalVisible(true);
           })}
         </View>
 
@@ -971,6 +972,40 @@ export default function SettingsScreen() {
               }}
             >
               <Text style={styles.modalSubmitBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Custom About App Modal (Green background, white text) */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={aboutModalVisible}
+        onRequestClose={() => setAboutModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={{ 
+            backgroundColor: '#2E7D32', 
+            borderRadius: 16, 
+            padding: 24, 
+            width: '80%', 
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.25,
+            shadowRadius: 10,
+            elevation: 5
+          }}>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 12 }}>Share Expense</Text>
+            <Text style={{ fontSize: 14, color: '#E8F5E9', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
+              Version 1.0.0{'\n'}Developed by: fyntech
+            </Text>
+            <TouchableOpacity 
+              style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10, width: '100%', alignItems: 'center' }}
+              onPress={() => setAboutModalVisible(false)}
+            >
+              <Text style={{ color: '#2E7D32', fontWeight: 'bold', fontSize: 14 }}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>

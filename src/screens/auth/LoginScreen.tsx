@@ -10,7 +10,8 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Modal
+  Modal,
+  Image
 } from 'react-native';
 import { authService } from '../../services/authService';
 import { useStore } from '../../store/useStore';
@@ -31,6 +32,11 @@ export default function LoginScreen() {
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors);
 
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertIsError, setAlertIsError] = useState(false);
+
   useEffect(() => {
     try {
       GoogleSignin.configure({
@@ -46,7 +52,10 @@ export default function LoginScreen() {
   }, []);
 
   const showMsg = (msg: string, isError = false) => {
-    Alert.alert(isError ? 'Error' : 'Success', msg);
+    setAlertTitle(isError ? 'Error' : 'Success');
+    setAlertMessage(msg);
+    setAlertIsError(isError);
+    setAlertVisible(true);
   };
 
   const handleGoogleSignIn = async (email: string, name: string) => {
@@ -121,9 +130,10 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
         {/* Header Logo */}
         <View style={styles.header}>
-          <View style={styles.logoPlaceholder}>
-            <Text style={styles.logoText}>$</Text>
-          </View>
+          <Image 
+            source={require('../../../assets/icon.png')} 
+            style={{ width: 100, height: 100, marginBottom: 12, borderRadius: 20 }} 
+          />
           <Text style={styles.title}>Share Expense</Text>
           <Text style={styles.subtitle}>by fyntech</Text>
         </View>
@@ -208,6 +218,40 @@ export default function LoginScreen() {
                 onPress={() => setGoogleModalVisible(false)}
               >
                 <Text style={styles.closeModalText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Custom Alert Modal (Green background, white text) */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={alertVisible}
+          onRequestClose={() => setAlertVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={{ 
+              backgroundColor: alertIsError ? colors.error : '#2E7D32', 
+              borderRadius: 16, 
+              padding: 24, 
+              width: '80%', 
+              alignItems: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.25,
+              shadowRadius: 10,
+              elevation: 5
+            }}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 12 }}>{alertTitle}</Text>
+              <Text style={{ fontSize: 14, color: '#E8F5E9', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
+                {alertMessage}
+              </Text>
+              <TouchableOpacity 
+                style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10, width: '100%', alignItems: 'center' }}
+                onPress={() => setAlertVisible(false)}
+              >
+                <Text style={{ color: alertIsError ? colors.error : '#2E7D32', fontWeight: 'bold', fontSize: 14 }}>OK</Text>
               </TouchableOpacity>
             </View>
           </View>
