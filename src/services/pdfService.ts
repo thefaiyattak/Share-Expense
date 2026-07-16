@@ -10,19 +10,30 @@ export const pdfService = {
     dateRange: string;
     teamName: string;
     currency?: string;
+    targetUserId?: string;
   }): Promise<string> => {
     const currency = params.currency || 'Rs.';
-    const total = params.expenses.reduce((sum, e) => sum + e.price * e.quantity, 0);
+    
+    // Filter by targetUserId if provided (for individual member report)
+    const filteredExpenses = params.targetUserId
+      ? params.expenses.filter((e) => e.userId === params.targetUserId)
+      : params.expenses;
+      
+    const filteredUsers = params.targetUserId
+      ? params.users.filter((u) => u.id === params.targetUserId)
+      : params.users;
+
+    const total = filteredExpenses.reduce((sum, e) => sum + e.price, 0);
 
     const formatter = new Intl.NumberFormat('en-PK', { maximumFractionDigits: 0 });
     const formatAmt = (num: number) => `${currency} ${formatter.format(num)}`;
 
     // Build Members Table HTML
     let membersRows = '';
-    params.users.forEach((u) => {
-      const spent = params.expenses
+    filteredUsers.forEach((u) => {
+      const spent = filteredExpenses
         .filter((e) => e.userId === u.id)
-        .reduce((sum, e) => sum + e.price * e.quantity, 0);
+        .reduce((sum, e) => sum + e.price, 0);
       const balance = u.walletBalance - spent;
       membersRows += `
         <tr>
@@ -36,7 +47,7 @@ export const pdfService = {
 
     // Build Expenses Table HTML
     let expenseRows = '';
-    params.expenses.forEach((e) => {
+    filteredExpenses.forEach((e) => {
       const dateStr = new Date(e.date).toLocaleDateString('en-GB', {
         day: '2-digit',
         month: 'short',
@@ -47,12 +58,16 @@ export const pdfService = {
           <td>${dateStr}</td>
           <td>${e.itemName}</td>
           <td>${e.quantity}</td>
-          <td>${formatAmt(e.price * e.quantity)}</td>
+          <td>${formatAmt(e.price)}</td>
           <td>${e.category.toUpperCase()}</td>
           <td>${e.userName}</td>
         </tr>
       `;
     });
+
+    const reportTitle = params.targetUserId && filteredUsers.length > 0
+      ? `${filteredUsers[0].name}'s Statement`
+      : 'Collective Statement';
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -153,7 +168,7 @@ export const pdfService = {
             <div class="title">${params.teamName}</div>
             <div class="period">Period: ${params.dateRange} | Run: ${new Date().toLocaleDateString()}</div>
           </div>
-          <div class="subtitle">Share Expense Report</div>
+          <div class="subtitle">${reportTitle}</div>
         </div>
 
         <div class="stats-container">
@@ -162,16 +177,16 @@ export const pdfService = {
             <div class="stat-lbl">Total Spending</div>
           </div>
           <div class="stat-box">
-            <div class="stat-val">${params.users.length}</div>
+            <div class="stat-val">${filteredUsers.length}</div>
             <div class="stat-lbl">Members</div>
           </div>
           <div class="stat-box">
-            <div class="stat-val">${params.expenses.length}</div>
+            <div class="stat-val">${filteredExpenses.length}</div>
             <div class="stat-lbl">Items Logged</div>
           </div>
         </div>
 
-        ${params.users.length > 0 ? `
+        ${filteredUsers.length > 0 ? `
           <h3>Members Summary</h3>
           <table>
             <thead>
@@ -188,15 +203,15 @@ export const pdfService = {
           </table>
         ` : ''}
 
-        ${params.expenses.length > 0 ? `
+        ${filteredExpenses.length > 0 ? `
           <h3>Detailed Expenses</h3>
           <table>
             <thead>
               <tr>
                 <th>Date</th>
                 <th>Item</th>
-                <th>Qty</th>
-                <th>Total Price</th>
+                <th>Qty/Desc</th>
+                <th>Price</th>
                 <th>Category</th>
                 <th>Paid By</th>
               </tr>
@@ -225,19 +240,22 @@ export const pdfService = {
   generateCsv: async (params: {
     expenses: Expense[];
     currency?: string;
+    targetUserId?: string;
   }): Promise<string> => {
     const currency = params.currency || 'Rs.';
-    const headers = ['Date', 'Item', 'Quantity', 'Price', 'Total', 'Category', 'By'];
+    const headers = ['Date', 'Item', 'Qty/Desc', 'Price', 'Category', 'By'];
     
-    const rows = params.expenses.map((e) => {
+    const filteredExpenses = params.targetUserId
+      ? params.expenses.filter((e) => e.userId === params.targetUserId)
+      : params.expenses;
+
+    const rows = filteredExpenses.map((e) => {
       const dateStr = new Date(e.date).toLocaleDateString('en-GB');
-      const totalStr = (e.price * e.quantity).toString();
       return [
         dateStr,
         e.itemName,
-        e.quantity.toString(),
+        e.quantity,
         e.price.toString(),
-        totalStr,
         e.category,
         e.userName,
       ];
@@ -248,7 +266,8 @@ export const pdfService = {
       ...rows.map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(','))
     ].join('\n');
 
-    const filename = `${(FileSystem as any).documentDirectory}ShareExpense_${Date.now()}.csv`;
+    const reportLabel = params.targetUserId ? `Individual_${params.targetUserId}` : 'Collective';
+    const filename = `${(FileSystem as any).documentDirectory}ShareExpense_${reportLabel}_${Date.now()}.csv`;
     await (FileSystem as any).writeAsStringAsync(filename, csvContent, { encoding: (FileSystem as any).EncodingType.UTF8 });
     
     if (await Sharing.isAvailableAsync()) {

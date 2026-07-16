@@ -29,7 +29,7 @@ interface ItemEntry {
 export default function AddExpenseScreen() {
   const navigation = useNavigation();
   const route = useRoute<any>();
-  const defaultCategory = route.params?.defaultCategory || 'none';
+  const defaultCategory = route.params?.defaultCategory || 'breakfast';
 
   const { currentAppUser, darkMode } = useStore();
   const [category, setCategory] = useState<MealCategory>(defaultCategory);
@@ -118,7 +118,7 @@ export default function AddExpenseScreen() {
         userId: currentAppUser.id,
         userName: currentAppUser.name,
         itemName: item.name.trim(),
-        quantity: parseInt(item.qty, 10) || 1,
+        quantity: item.qty.trim() || '1',
         price: parseFloat(item.price) || 0,
         category,
         date: new Date(),
@@ -139,7 +139,7 @@ export default function AddExpenseScreen() {
     }
   };
 
-  const categoriesList: MealCategory[] = ['breakfast', 'lunch', 'dinner', 'utility', 'none'];
+  const categoriesList: MealCategory[] = ['breakfast', 'lunch', 'dinner', 'utility'];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -193,11 +193,10 @@ export default function AddExpenseScreen() {
             <View style={styles.qtyPriceRow}>
               <TextInput 
                 style={[styles.input, { flex: 1, marginRight: 8 }]}
-                placeholder="Qty"
+                placeholder="Qty (e.g. 1 kg)"
                 placeholderTextColor={colors.textSecondary}
                 value={item.qty}
                 onChangeText={(txt) => updateItem(i, 'qty', txt)}
-                keyboardType="numeric"
               />
               <TextInput 
                 style={[styles.input, { flex: 2 }]}

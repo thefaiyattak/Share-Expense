@@ -215,7 +215,7 @@ export const expenseService = {
     });
 
     params.expenses.forEach(exp => {
-      const price = exp.quantity * exp.price;
+      const price = exp.price;
       let payers: string[] = [];
 
       if (exp.category === 'utility') {

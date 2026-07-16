@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -19,11 +19,12 @@ import Svg, { Circle } from 'react-native-svg';
 import { db } from '../../services/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { expenseService } from '../../services/expenseService';
+import { pdfService } from '../../services/pdfService';
 
 export default function UserDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute<any>();
-  const { currency, expenses, currentAppUser, setCurrentAppUser, setExpenses, setMembers, darkMode } = useStore();
+  const { currency, expenses, currentAppUser, setCurrentAppUser, setExpenses, setMembers, members, darkMode } = useStore();
 
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors);
@@ -50,6 +51,7 @@ export default function UserDetailScreen() {
   const [editItemName, setEditItemName] = useState('');
   const [editQty, setEditQty] = useState('');
   const [editPrice, setEditPrice] = useState('');
+  const [editHistory, setEditHistory] = useState<any[]>([]);
 
   // Access Controls
   const isAuthorized = currentAppUser?.role === 'admin' || currentAppUser?.id === userId;
@@ -71,13 +73,23 @@ export default function UserDetailScreen() {
     lunch: 0,
     dinner: 0,
     utility: 0,
-    none: 0
   };
   userExpenses.forEach(e => {
-    categoryTotals[e.category] = (categoryTotals[e.category] || 0) + e.price * e.quantity;
+    categoryTotals[e.category] = (categoryTotals[e.category] || 0) + e.price;
   });
 
   const totalCatSpent = Object.values(categoryTotals).reduce((a, b) => a + b, 0);
+
+  useEffect(() => {
+    if (!selectedExpense) {
+      setEditHistory([]);
+      return;
+    }
+    const unsub = expenseService.getEditHistory(selectedExpense.id, (data) => {
+      setEditHistory(data);
+    });
+    return unsub;
+  }, [selectedExpense]);
 
   // SVG Gauge calculations
   const usagePct = wallet > 0 ? Math.min(spent / wallet, 1) : 0;
@@ -128,14 +140,25 @@ export default function UserDetailScreen() {
     }
     setLoading(true);
     try {
-      await updateDoc(doc(db, 'expenses', selectedExpense.id), {
-        itemName: editItemName.trim(),
-        price: parseFloat(editPrice),
-        quantity: parseInt(editQty, 10) || 1,
-        isEdited: true,
-        lastEditedBy: currentAppUser?.name,
-        lastEditedAt: new Date()
-      });
+      const previousState = {
+        itemName: selectedExpense.itemName,
+        price: selectedExpense.price,
+        quantity: selectedExpense.quantity,
+        category: selectedExpense.category,
+      };
+
+      await expenseService.updateExpense(
+        selectedExpense.id,
+        {
+          itemName: editItemName.trim(),
+          price: parseFloat(editPrice) || 0,
+          quantity: editQty.trim() || '1',
+        },
+        currentAppUser?.id || '',
+        currentAppUser?.name || 'Unknown',
+        previousState
+      );
+
       setExpenseModalVisible(false);
       setSelectedExpense(null);
       Alert.alert('Success', 'Expense modified successfully.');
@@ -338,7 +361,7 @@ export default function UserDetailScreen() {
                 </View>
                 <View style={styles.expenseRightCol}>
                   <Text style={styles.expenseAmount}>
-                    {formatAmount(exp.price * exp.quantity)}
+                    {formatAmount(exp.price)}
                   </Text>
                   {isAuthorized && (
                     <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} style={{ marginLeft: 8 }} />
@@ -352,8 +375,62 @@ export default function UserDetailScreen() {
         {/* Generate Statement */}
         <TouchableOpacity 
           style={styles.statementBtn}
-          onPress={() => {
-            Alert.alert('Statement', 'Generating local statements for this member...');
+          onPress={async () => {
+            if (currentAppUser?.role !== 'admin' && currentAppUser?.id !== userId) {
+              Alert.alert('Access Denied', 'Standard members can only generate their own statement.');
+              return;
+            }
+            
+            const userObj = members.find(m => m.id === userId) || (currentAppUser?.id === userId ? currentAppUser : null);
+            if (!userObj) {
+              Alert.alert('Error', 'Member details not found.');
+              return;
+            }
+
+            Alert.alert(
+              'Generate Statement',
+              'Choose format to download/share:',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: 'PDF Statement', 
+                  onPress: async () => {
+                    try {
+                      setLoading(true);
+                      await pdfService.generatePdf({
+                        users: [userObj as any],
+                        expenses: expenses,
+                        dateRange: 'All time',
+                        teamName: currentAppUser?.teamName || 'Share Expense',
+                        currency: currency,
+                        targetUserId: userId
+                      });
+                    } catch (err: any) {
+                      Alert.alert('Error', err.message || 'Failed to generate PDF');
+                    } finally {
+                      setLoading(false);
+                    }
+                  }
+                },
+                { 
+                  text: 'CSV Statement', 
+                  onPress: async () => {
+                    try {
+                      setLoading(true);
+                      await pdfService.generateCsv({
+                        expenses: expenses,
+                        currency: currency,
+                        targetUserId: userId
+                      });
+                    } catch (err: any) {
+                      Alert.alert('Error', err.message || 'Failed to generate CSV');
+                    } finally {
+                      setLoading(false);
+                    }
+                  }
+                }
+              ]
+            );
           }}
         >
           <Ionicons name="document-text" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
@@ -423,11 +500,10 @@ export default function UserDetailScreen() {
             <View style={{ flexDirection: 'row', width: '100%' }}>
               <TextInput 
                 style={[styles.modalInput, { flex: 1, marginRight: 8 }]}
-                placeholder="Qty"
+                placeholder="Qty (e.g. 1 kg)"
                 placeholderTextColor={colors.textSecondary}
                 value={editQty}
                 onChangeText={setEditQty}
-                keyboardType="numeric"
               />
               <TextInput 
                 style={[styles.modalInput, { flex: 2 }]}
@@ -445,6 +521,29 @@ export default function UserDetailScreen() {
             >
               <Text style={styles.modalSubmitBtnText}>Save Changes</Text>
             </TouchableOpacity>
+
+            {/* Display edit history list */}
+            {editHistory.length > 0 && (
+              <View style={{ width: '100%', marginTop: 16, borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 12 }}>
+                <Text style={{ fontSize: 13, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 8 }}>Modification History</Text>
+                <ScrollView style={{ maxHeight: 120, width: '100%' }}>
+                  {editHistory.map((hist, idx) => {
+                    const prev = hist.previousData || {};
+                    const histDate = hist.timestamp ? new Date(hist.timestamp).toLocaleDateString() : '';
+                    return (
+                      <View key={hist.id || idx} style={{ paddingVertical: 6, borderBottomWidth: 0.5, borderBottomColor: colors.divider }}>
+                        <Text style={{ fontSize: 10, color: colors.textSecondary }}>
+                          Modified by {hist.userName} on {histDate}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: colors.textPrimary, marginTop: 2 }}>
+                          {prev.itemName} ({prev.quantity}) - {formatAmount(prev.price)} ➔ {hist.newData?.itemName} ({hist.newData?.quantity}) - {formatAmount(hist.newData?.price)}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
 
             <TouchableOpacity 
               style={[styles.modalSubmitBtn, { backgroundColor: colors.error, marginTop: 8 }]}

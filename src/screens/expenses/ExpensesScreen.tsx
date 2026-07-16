@@ -41,7 +41,7 @@ export default function ExpensesScreen() {
   members.forEach(m => {
     memberSpentMap[m.id] = expenses
       .filter(e => e.userId === m.id)
-      .reduce((sum, e) => sum + e.price * e.quantity, 0);
+      .reduce((sum, e) => sum + e.price, 0);
   });
 
   const totalSpent = Object.values(memberSpentMap).reduce((sum, val) => sum + val, 0);
@@ -89,27 +89,109 @@ export default function ExpensesScreen() {
   };
 
   const handleExportPdf = async () => {
-    try {
-      await pdfService.generatePdf({
-        users: members,
-        expenses: expenses,
-        dateRange: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-        teamName: 'Share Expense Team',
-        currency
-      });
-    } catch (e: any) {
-      Alert.alert('PDF Export Failed', e.message);
+    if (!currentAppUser) return;
+    
+    const runPdfExport = async (targetUserId?: string, userList?: any[]) => {
+      try {
+        await pdfService.generatePdf({
+          users: userList || members,
+          expenses: expenses,
+          dateRange: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+          teamName: currentAppUser.teamName || 'Share Expense',
+          currency,
+          targetUserId
+        });
+      } catch (e: any) {
+        Alert.alert('PDF Export Failed', e.message);
+      }
+    };
+
+    if (currentAppUser.role === 'admin') {
+      Alert.alert(
+        'Export PDF Report',
+        'Choose report type:',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Collective Report', 
+            onPress: () => runPdfExport() 
+          },
+          { 
+            text: 'My Own Report', 
+            onPress: () => runPdfExport(currentAppUser.id, [currentAppUser]) 
+          },
+          { 
+            text: 'Member Report...', 
+            onPress: () => {
+              const otherMembers = members.filter(m => m.id !== currentAppUser.id);
+              if (otherMembers.length === 0) {
+                Alert.alert('Info', 'No other group members found.');
+                return;
+              }
+              const buttons = otherMembers.slice(0, 5).map(m => ({
+                text: m.name,
+                onPress: () => runPdfExport(m.id, [m])
+              }));
+              buttons.push({ text: 'Cancel', style: 'cancel' } as any);
+              Alert.alert('Select Member', 'Choose a member to export:', buttons as any);
+            }
+          }
+        ]
+      );
+    } else {
+      await runPdfExport(currentAppUser.id, [currentAppUser]);
     }
   };
 
   const handleExportCsv = async () => {
-    try {
-      await pdfService.generateCsv({
-        expenses: expenses,
-        currency
-      });
-    } catch (e: any) {
-      Alert.alert('CSV Export Failed', e.message);
+    if (!currentAppUser) return;
+
+    const runCsvExport = async (targetUserId?: string) => {
+      try {
+        await pdfService.generateCsv({
+          expenses: expenses,
+          currency,
+          targetUserId
+        });
+      } catch (e: any) {
+        Alert.alert('CSV Export Failed', e.message);
+      }
+    };
+
+    if (currentAppUser.role === 'admin') {
+      Alert.alert(
+        'Export CSV Report',
+        'Choose report type:',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Collective Report', 
+            onPress: () => runCsvExport() 
+          },
+          { 
+            text: 'My Own Report', 
+            onPress: () => runCsvExport(currentAppUser.id) 
+          },
+          { 
+            text: 'Member Report...', 
+            onPress: () => {
+              const otherMembers = members.filter(m => m.id !== currentAppUser.id);
+              if (otherMembers.length === 0) {
+                Alert.alert('Info', 'No other group members found.');
+                return;
+              }
+              const buttons = otherMembers.slice(0, 5).map(m => ({
+                text: m.name,
+                onPress: () => runCsvExport(m.id)
+              }));
+              buttons.push({ text: 'Cancel', style: 'cancel' } as any);
+              Alert.alert('Select Member', 'Choose a member to export:', buttons as any);
+            }
+          }
+        ]
+      );
+    } else {
+      await runCsvExport(currentAppUser.id);
     }
   };
 

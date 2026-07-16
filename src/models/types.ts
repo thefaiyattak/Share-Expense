@@ -31,7 +31,7 @@ export interface Expense {
   userId: string;
   userName: string;
   itemName: string;
-  quantity: number;
+  quantity: string;
   price: number;
   category: MealCategory;
   date: Date;
