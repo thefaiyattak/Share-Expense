@@ -77,20 +77,29 @@ export default function App() {
   const [initializing, setInitializing] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
 
-  const scaleValue = React.useRef(new Animated.Value(0.3)).current;
+  const circleScale = React.useRef(new Animated.Value(0.1)).current;
+  const walletScale = React.useRef(new Animated.Value(0.3)).current;
   const opacityValue = React.useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.spring(scaleValue, {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.spring(walletScale, {
+          toValue: 1,
+          tension: 10,
+          friction: 4,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityValue, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.spring(circleScale, {
         toValue: 1,
         tension: 15,
         friction: 3,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacityValue, {
-        toValue: 1,
-        duration: 1000,
         useNativeDriver: true,
       }),
     ]).start();
@@ -103,7 +112,7 @@ export default function App() {
       }).start(() => {
         setShowSplash(false);
       });
-    }, 2500);
+    }, 2800);
 
     return () => clearTimeout(timer);
   }, []);
@@ -187,16 +196,30 @@ export default function App() {
   if (showSplash || initializing) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: darkMode ? '#121212' : '#E6F4FE' }]}>
-        <Animated.Image
-          source={require('./assets/icon.png')}
-          style={{
-            width: 140,
-            height: 140,
-            opacity: opacityValue,
-            transform: [{ scale: scaleValue }],
-            borderRadius: 28,
-          }}
-        />
+        <View style={{ width: 160, height: 160, justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
+          {/* Sliced Circle Layer (renders behind because it is first in JSX) */}
+          <Animated.Image
+            source={require('./assets/splash_circle.png')}
+            style={{
+              position: 'absolute',
+              width: 160,
+              height: 160,
+              opacity: opacityValue,
+              transform: [{ scale: circleScale }],
+            }}
+          />
+          {/* Sliced Wallet Layer (renders in front because it is second in JSX) */}
+          <Animated.Image
+            source={require('./assets/splash_wallet.png')}
+            style={{
+              position: 'absolute',
+              width: 160,
+              height: 160,
+              opacity: opacityValue,
+              transform: [{ scale: walletScale }],
+            }}
+          />
+        </View>
         <Animated.Text style={{
           marginTop: 24,
           fontSize: 22,
