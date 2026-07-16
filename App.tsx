@@ -1,6 +1,6 @@
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet, LogBox } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, LogBox, Animated } from 'react-native';
 
 LogBox.ignoreLogs([
   'InteractionManager has been deprecated',
@@ -75,6 +75,38 @@ function TabNavigator() {
 export default function App() {
   const { currentAppUser, setCurrentAppUser, setExpenses, setMembers, setAttendance, setUserTeams, darkMode } = useStore();
   const [initializing, setInitializing] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
+
+  const scaleValue = React.useRef(new Animated.Value(0.3)).current;
+  const opacityValue = React.useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scaleValue, {
+        toValue: 1,
+        tension: 15,
+        friction: 3,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacityValue, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    const timer = setTimeout(() => {
+      Animated.timing(opacityValue, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }).start(() => {
+        setShowSplash(false);
+      });
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors);
@@ -152,10 +184,28 @@ export default function App() {
     };
   }, [currentAppUser]);
 
-  if (initializing) {
+  if (showSplash || initializing) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={[styles.loadingContainer, { backgroundColor: darkMode ? '#121212' : '#E6F4FE' }]}>
+        <Animated.Image
+          source={require('./assets/icon.png')}
+          style={{
+            width: 140,
+            height: 140,
+            opacity: opacityValue,
+            transform: [{ scale: scaleValue }],
+            borderRadius: 28,
+          }}
+        />
+        <Animated.Text style={{
+          marginTop: 24,
+          fontSize: 22,
+          fontWeight: 'bold',
+          color: colors.primary,
+          opacity: opacityValue
+        }}>
+          Share Expense
+        </Animated.Text>
       </View>
     );
   }
