@@ -445,7 +445,7 @@ export default function SettingsScreen() {
   ];
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       {loading && (
         <View style={styles.globalLoader}>
           <ActivityIndicator size="large" color={colors.primary} />

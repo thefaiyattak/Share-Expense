@@ -155,7 +155,7 @@ export default function StatisticsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.screenHeader}>Statistics</Text>
 
@@ -256,7 +256,7 @@ const getStyles = (colors: any) => StyleSheet.create({
   totalSpentVal: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#1B5E20',
+    color: colors.primary,
   },
   totalSpentLabel: {
     fontSize: 12,

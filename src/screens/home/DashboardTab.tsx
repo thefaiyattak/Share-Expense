@@ -233,7 +233,7 @@ export default function DashboardTab() {
   ];
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       {loading && (
         <View style={styles.globalLoader}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -648,7 +648,7 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
   progressValue: {
     fontSize: 26,
     fontWeight: 'bold',
-    color: '#1B5E20',
+    color: colors.primary,
     marginVertical: 4,
   },
   progressPeriod: {
