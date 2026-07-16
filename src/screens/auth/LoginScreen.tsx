@@ -35,7 +35,7 @@ export default function LoginScreen() {
     try {
       GoogleSignin.configure({
         // Web Client ID from Google Cloud / Firebase console
-        webClientId: '20947220033-msh063bmdch7mrc0v868t00b5220c5k4.apps.googleusercontent.com',
+        webClientId: '20947220033-fvnaobstfc3aktvur0kf6e1cquioq6qb.apps.googleusercontent.com',
         offlineAccess: true,
       });
       setIsNativeAvailable(true);
