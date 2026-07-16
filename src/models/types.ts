@@ -13,6 +13,9 @@ export interface AppUser {
   profileImageUrl?: string;
   currency: string;
   createdAt: Date;
+  deactivated?: boolean;
+  deleted?: boolean;
+  deleteAt?: any;
 }
 
 export interface Team {

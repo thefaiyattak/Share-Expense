@@ -514,7 +514,7 @@ export default function SettingsScreen() {
         <Text style={styles.sectionHeaderLabel}>About</Text>
         <View style={styles.sectionContent}>
           {renderItem('information-circle-outline', 'About app', () => {
-            Alert.alert('Share Expense', 'Version 1.0.0\nCollaborative Expense Splitter\nby fyntech');
+            Alert.alert('Share Expense', 'Version 1.0.0\nDeveloped by: fyntech');
           })}
         </View>
 
@@ -523,6 +523,77 @@ export default function SettingsScreen() {
           <Ionicons name="log-out-outline" size={20} color={colors.error} />
           <Text style={styles.logoutBtnText}>Sign out</Text>
         </TouchableOpacity>
+
+        {/* Account Deactivation & Deletion Buttons */}
+        <View style={{ marginTop: 20, gap: 10 }}>
+          <TouchableOpacity 
+            style={[styles.logoutBtn, { borderColor: '#FFA000', marginTop: 0 }]} 
+            onPress={() => {
+              Alert.alert(
+                'Deactivate Account',
+                'Are you sure you want to deactivate your account? It will pause your account until your next login, and your profile will be hidden from groups.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { 
+                    text: 'Deactivate', 
+                    style: 'destructive',
+                    onPress: async () => {
+                      if (currentAppUser) {
+                        try {
+                          setLoading(true);
+                          await authService.deactivateAccount(currentAppUser.id);
+                          setCurrentAppUser(null);
+                          setUserTeams([]);
+                        } catch (e: any) {
+                          Alert.alert('Error', e.message || 'Failed to deactivate account');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }
+                    }
+                  }
+                ]
+              );
+            }}
+          >
+            <Ionicons name="pause-circle-outline" size={20} color="#FFA000" />
+            <Text style={[styles.logoutBtnText, { color: '#FFA000' }]}>Deactivate Account</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.logoutBtn, { borderColor: colors.error, marginTop: 0 }]} 
+            onPress={() => {
+              Alert.alert(
+                'Delete Account',
+                'Are you sure you want to permanently delete your account? All your data will be permanently deleted after 30 days. Your expenses will remain visible to other group members with a countdown timer.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { 
+                    text: 'Delete Permanently', 
+                    style: 'destructive',
+                    onPress: async () => {
+                      if (currentAppUser) {
+                        try {
+                          setLoading(true);
+                          await authService.deleteAccount(currentAppUser.id);
+                          setCurrentAppUser(null);
+                          setUserTeams([]);
+                        } catch (e: any) {
+                          Alert.alert('Error', e.message || 'Failed to delete account');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }
+                    }
+                  }
+                ]
+              );
+            }}
+          >
+            <Ionicons name="trash-outline" size={20} color={colors.error} />
+            <Text style={[styles.logoutBtnText, { color: colors.error }]}>Delete Account</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
       {/* Admin Groups Modal Sub-menu */}
@@ -803,19 +874,29 @@ export default function SettingsScreen() {
               {/* Members list */}
               <View style={styles.editorSection}>
                 <Text style={styles.editorSecTitle}>Group Members ({groupMembers.length})</Text>
-                {groupMembers.map((m) => (
-                  <View key={m.id} style={styles.memberListRow}>
-                    <View style={styles.memberInfoCol}>
-                      <Text style={styles.memberNameText}>{m.name}</Text>
-                      <Text style={styles.memberEmailText}>{m.email}</Text>
+                {groupMembers.map((m) => {
+                  let displayName = m.name;
+                  if (m.deleted && m.deleteAt) {
+                    const deleteAtDate = m.deleteAt.toDate ? m.deleteAt.toDate() : new Date(m.deleteAt);
+                    const remainingDays = Math.ceil((deleteAtDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                    if (remainingDays > 0) {
+                      displayName = `${m.name} (Deleting in ${remainingDays}d)`;
+                    }
+                  }
+                  return (
+                    <View key={m.id} style={styles.memberListRow}>
+                      <View style={styles.memberInfoCol}>
+                        <Text style={styles.memberNameText}>{displayName}</Text>
+                        <Text style={styles.memberEmailText}>{m.email}</Text>
+                      </View>
+                      {m.email !== currentAppUser?.email && (
+                        <TouchableOpacity onPress={() => handleRemoveMemberFromGroup(m.id)} style={styles.removeMemBtn}>
+                          <Ionicons name="trash-outline" size={18} color={colors.error} />
+                        </TouchableOpacity>
+                      )}
                     </View>
-                    {m.email !== currentAppUser?.email && (
-                      <TouchableOpacity onPress={() => handleRemoveMemberFromGroup(m.id)} style={styles.removeMemBtn}>
-                        <Ionicons name="trash-outline" size={18} color={colors.error} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))}
+                  );
+                })}
               </View>
 
               {/* Delete Group Action */}
@@ -857,19 +938,29 @@ export default function SettingsScreen() {
             <Text style={styles.modalSubtitle}>View group members</Text>
 
             <ScrollView style={{ width: '100%', marginVertical: 12 }}>
-              {groupMembers.map((m) => (
-                <View key={m.id} style={styles.memberListRow}>
-                  <View style={styles.memberInfoCol}>
-                    <Text style={styles.memberNameText}>{m.name}</Text>
-                    <Text style={styles.memberEmailText}>{m.email}</Text>
+              {groupMembers.map((m) => {
+                let displayName = m.name;
+                if (m.deleted && m.deleteAt) {
+                  const deleteAtDate = m.deleteAt.toDate ? m.deleteAt.toDate() : new Date(m.deleteAt);
+                  const remainingDays = Math.ceil((deleteAtDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                  if (remainingDays > 0) {
+                    displayName = `${m.name} (Deleting in ${remainingDays}d)`;
+                  }
+                }
+                return (
+                  <View key={m.id} style={styles.memberListRow}>
+                    <View style={styles.memberInfoCol}>
+                      <Text style={styles.memberNameText}>{displayName}</Text>
+                      <Text style={styles.memberEmailText}>{m.email}</Text>
+                    </View>
+                    <View style={[styles.roleBadge, { backgroundColor: m.role === 'admin' ? (darkMode ? '#152C3E' : '#E3F2FD') : (darkMode ? '#2D2D2D' : '#F5F5F5') }]}>
+                      <Text style={[styles.roleBadgeText, { color: m.role === 'admin' ? colors.primary : colors.textSecondary }]}>
+                        {m.role === 'admin' ? 'Admin' : 'Member'}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={[styles.roleBadge, { backgroundColor: m.role === 'admin' ? (darkMode ? '#152C3E' : '#E3F2FD') : (darkMode ? '#2D2D2D' : '#F5F5F5') }]}>
-                    <Text style={[styles.roleBadgeText, { color: m.role === 'admin' ? colors.primary : colors.textSecondary }]}>
-                      {m.role === 'admin' ? 'Admin' : 'Member'}
-                    </Text>
-                  </View>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
 
             <TouchableOpacity 

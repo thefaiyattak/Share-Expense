@@ -262,13 +262,22 @@ export default function ExpensesScreen() {
 
           const progressVal = m.walletBalance > 0 ? Math.min(spent / m.walletBalance, 1) : 0;
 
+          let displayName = m.name;
+          if (m.deleted && m.deleteAt) {
+            const deleteAtDate = m.deleteAt.toDate ? m.deleteAt.toDate() : new Date(m.deleteAt);
+            const remainingDays = Math.ceil((deleteAtDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            if (remainingDays > 0) {
+              displayName = `${m.name} (Deleting in ${remainingDays}d)`;
+            }
+          }
+
           return (
             <TouchableOpacity 
               key={m.id} 
               style={styles.memberCard}
               onPress={() => navigation.navigate('UserDetail', { 
                 userId: m.id,
-                userName: m.name, 
+                userName: displayName, 
                 userInitials: initials, 
                 spent, 
                 wallet: m.walletBalance, 
@@ -283,7 +292,7 @@ export default function ExpensesScreen() {
                 </View>
                 
                 <View style={styles.memberInfo}>
-                  <Text style={styles.memberName}>{m.name}</Text>
+                  <Text style={styles.memberName}>{displayName}</Text>
                   <Text style={styles.memberSubInfo}>
                     Spent: {formatAmount(spent)}  |  Wallet: {formatAmount(m.walletBalance)}
                   </Text>

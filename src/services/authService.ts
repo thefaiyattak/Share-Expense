@@ -236,7 +236,34 @@ export const authService = {
       return data && data.teamId;
     });
     const d = withTeam || snap.docs[0];
-    return { id: d.id, ...d.data() } as unknown as AppUser;
+    const userDocRef = doc(db, 'users', d.id);
+    const data = d.data();
+
+    // Auto-reactivate user if deactivated or pending deletion
+    if (data.deactivated || data.deleted) {
+      const wasDeleted = data.deleted;
+      const updatedFields: any = {
+        deactivated: false,
+        deleted: false,
+        deleteAt: null
+      };
+      await updateDoc(userDocRef, updatedFields);
+      
+      // If they were pending deletion, notify the group that they have returned/restored their account
+      if (wasDeleted && data.teamId) {
+        const notifRef = doc(collection(db, 'notifications'));
+        await setDoc(notifRef, {
+          teamId: data.teamId,
+          title: 'Account Restored',
+          desc: `${data.name || 'A member'} has logged back in and restored their account.`,
+          createdAt: new Date()
+        });
+      }
+      
+      return { id: d.id, ...data, ...updatedFields } as unknown as AppUser;
+    }
+
+    return { id: d.id, ...data } as unknown as AppUser;
   },
 
   getUserTeams: async (email: string): Promise<any[]> => {
@@ -320,7 +347,22 @@ export const authService = {
   getTeamMembers: (teamId: string, callback: (users: AppUser[]) => void) => {
     const q = query(collection(db, 'users'), where('teamId', '==', teamId));
     return onSnapshot(q, (snap) => {
-      const users = snap.docs.map(d => ({ id: d.id, ...d.data() } as unknown as AppUser));
+      const now = new Date();
+      const users = snap.docs
+        .map(d => {
+          const data = d.data();
+          let deleteAtDate = null;
+          if (data.deleteAt) {
+            deleteAtDate = data.deleteAt.toDate ? data.deleteAt.toDate() : new Date(data.deleteAt);
+          }
+          return { id: d.id, ...data, deleteAt: deleteAtDate } as unknown as AppUser;
+        })
+        .filter(u => {
+          if (!u.deactivated) return true;
+          // Show deactivated user only if they are pending deletion and it hasn't expired yet
+          if (u.deleted && u.deleteAt && u.deleteAt > now) return true;
+          return false;
+        });
       callback(users);
     });
   },
@@ -343,6 +385,37 @@ export const authService = {
     const snap = await getDoc(doc(db, 'users', userDocId));
     if (!snap.exists()) throw new Error('User record not found.');
     return { id: snap.id, ...snap.data() } as unknown as AppUser;
+  },
+
+  deactivateAccount: async (userId: string) => {
+    await updateDoc(doc(db, 'users', userId), { deactivated: true });
+    await fbSignOut(auth);
+  },
+
+  deleteAccount: async (userId: string) => {
+    const userSnap = await getDoc(doc(db, 'users', userId));
+    if (userSnap.exists()) {
+      const userData = userSnap.data();
+      const deleteAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      
+      await updateDoc(doc(db, 'users', userId), {
+        deactivated: true,
+        deleted: true,
+        deleteAt: deleteAt
+      });
+
+      // Send deletion notifications to groups sharing with this user
+      if (userData.teamId) {
+        const notifRef = doc(collection(db, 'notifications'));
+        await setDoc(notifRef, {
+          teamId: userData.teamId,
+          title: 'Account Deletion',
+          desc: `${userData.name || 'A member'} has scheduled their account for permanent deletion. Their data will remain visible for 30 days.`,
+          createdAt: new Date()
+        });
+      }
+    }
+    await fbSignOut(auth);
   },
 
   signOut: () => fbSignOut(auth)

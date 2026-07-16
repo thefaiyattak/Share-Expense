@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -8,7 +8,8 @@ import {
   Alert,
   Modal,
   TextInput,
-  ActivityIndicator
+  ActivityIndicator,
+  FlatList
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStore } from '../../store/useStore';
@@ -17,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { authService } from '../../services/authService';
 import { db } from '../../services/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import Svg, { Circle } from 'react-native-svg';
 
 export default function DashboardTab() {
@@ -33,6 +34,64 @@ export default function DashboardTab() {
     darkMode
   } = useStore();
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [notifications, setNotifications] = useState<any[]>([]);
+
+  const flatListRef = useRef<FlatList>(null);
+
+  const calendarDays = useMemo(() => {
+    const list = [];
+    for (let i = -15; i <= 15; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      list.push(d);
+    }
+    return list;
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (flatListRef.current) {
+        flatListRef.current.scrollToIndex({ index: 15, animated: false, viewPosition: 0.5 });
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!currentAppUser) return;
+    const teamIdToListen = currentAppUser.teamId || `personal_${currentAppUser.id.split('_')[0]}`;
+    const q = query(collection(db, 'notifications'), where('teamId', '==', teamIdToListen));
+    
+    return onSnapshot(q, (snap) => {
+      const notifs = snap.docs.map(doc => {
+        const data = doc.data();
+        let timeLabel = 'Just now';
+        if (data.createdAt) {
+          const created = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+          const diffMs = Date.now() - created.getTime();
+          const diffMins = Math.floor(diffMs / 60000);
+          if (diffMins < 1) timeLabel = 'Just now';
+          else if (diffMins < 60) timeLabel = `${diffMins}m ago`;
+          else {
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) timeLabel = `${diffHours}h ago`;
+            else timeLabel = `${Math.floor(diffHours / 24)}d ago`;
+          }
+        }
+        return {
+          id: doc.id,
+          title: data.title || 'Notification',
+          desc: data.desc || '',
+          time: timeLabel,
+          icon: data.title === 'Account Deletion' ? 'warning-outline' : 
+                data.title === 'Account Restored' ? 'checkmark-circle-outline' : 'notifications-outline'
+        };
+      });
+      // Sort newest first
+      notifs.sort((a, b) => b.id.localeCompare(a.id));
+      setNotifications(notifs);
+    });
+  }, [currentAppUser]);
 
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors, darkMode);
@@ -47,13 +106,6 @@ export default function DashboardTab() {
   const [inviteCodeInput, setInviteCodeInput] = useState('');
   const [walletAmountInput, setWalletAmountInput] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // Mock notifications list
-  const mockNotifications = [
-    { id: '1', title: 'New Expense Added', desc: 'Usman Gemini added Rs. 500 for Lunch', time: '10m ago', icon: 'card-outline' },
-    { id: '2', title: 'Wallet Updated', desc: 'John Doe deposited Rs. 2,000 to their wallet', time: '1h ago', icon: 'wallet-outline' },
-    { id: '3', title: 'Group split calculated', desc: 'Monthly splits are fully calculated for July 2026', time: '1d ago', icon: 'calculator-outline' },
-  ];
 
   const getGreeting = () => {
     const hrs = new Date().getHours();
@@ -173,42 +225,51 @@ export default function DashboardTab() {
 
   const totalWallet = members.reduce((sum, m) => sum + (m.walletBalance || 0), 0);
 
-  // Calendar setup (7 days of current week)
+  // Calendar setup (31 days sliding list)
   const renderCalendar = () => {
-    const now = new Date();
-    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
-    const days = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(startOfWeek);
-      d.setDate(d.getDate() + i);
-      return d;
-    });
     const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
     return (
       <View style={styles.calendarContainer}>
         <View style={styles.calendarHeader}>
           <Text style={styles.calendarTitle}>
-            {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            {selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
           </Text>
         </View>
-        <View style={styles.calendarDaysRow}>
-          {days.map((day, i) => {
-            const isToday = day.getDate() === new Date().getDate() && day.getMonth() === new Date().getMonth();
-            const isSelected = day.getDate() === selectedDate.getDate() && day.getMonth() === selectedDate.getMonth();
+        <FlatList
+          ref={flatListRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          data={calendarDays}
+          keyExtractor={(item, index) => index.toString()}
+          getItemLayout={(data, index) => (
+            { length: 50, offset: 50 * index, index }
+          )}
+          snapToInterval={50}
+          snapToAlignment="center"
+          decelerationRate="fast"
+          contentContainerStyle={{ paddingHorizontal: 150 }}
+          renderItem={({ item, index }) => {
+            const isToday = item.getDate() === new Date().getDate() && item.getMonth() === new Date().getMonth() && item.getFullYear() === new Date().getFullYear();
+            const isSelected = item.getDate() === selectedDate.getDate() && item.getMonth() === selectedDate.getMonth() && item.getFullYear() === selectedDate.getFullYear();
+            const dayLabel = labels[item.getDay()];
+
             return (
               <TouchableOpacity 
-                key={i} 
-                style={styles.dayCol} 
-                onPress={() => setSelectedDate(day)}
+                style={[styles.dayCol, { width: 50 }]} 
+                onPress={() => {
+                  setSelectedDate(item);
+                  flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+                }}
               >
-                <Text style={[styles.dayLabel, isToday && styles.todayLabel]}>{labels[i]}</Text>
+                <Text style={[styles.dayLabel, isToday && styles.todayLabel]}>{dayLabel}</Text>
                 <View style={[styles.dateCircle, isSelected && styles.dateCircleSelected]}>
-                  <Text style={[styles.dateText, isSelected && styles.dateTextSelected]}>{day.getDate()}</Text>
+                  <Text style={[styles.dateText, isSelected && styles.dateTextSelected]}>{item.getDate()}</Text>
                 </View>
               </TouchableOpacity>
             );
-          })}
-        </View>
+          }}
+        />
       </View>
     );
   };
@@ -518,18 +579,22 @@ export default function DashboardTab() {
             </View>
 
             <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }}>
-              {mockNotifications.map((notif) => (
-                <View key={notif.id} style={styles.notificationItem}>
-                  <View style={styles.notifIconBox}>
-                    <Ionicons name={notif.icon as any} size={20} color={colors.primary} />
+              {notifications.length === 0 ? (
+                <Text style={{ textAlign: 'center', color: colors.textSecondary, marginTop: 20 }}>No notifications yet.</Text>
+              ) : (
+                notifications.map((notif) => (
+                  <View key={notif.id} style={styles.notificationItem}>
+                    <View style={styles.notifIconBox}>
+                      <Ionicons name={notif.icon as any} size={20} color={colors.primary} />
+                    </View>
+                    <View style={styles.notifDetails}>
+                      <Text style={styles.notifTitle}>{notif.title}</Text>
+                      <Text style={styles.notifDesc}>{notif.desc}</Text>
+                      <Text style={styles.notifTime}>{notif.time}</Text>
+                    </View>
                   </View>
-                  <View style={styles.notifDetails}>
-                    <Text style={styles.notifTitle}>{notif.title}</Text>
-                    <Text style={styles.notifDesc}>{notif.desc}</Text>
-                    <Text style={styles.notifTime}>{notif.time}</Text>
-                  </View>
-                </View>
-              ))}
+                ))
+              )}
             </ScrollView>
           </View>
         </View>
