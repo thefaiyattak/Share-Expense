@@ -1,6 +1,6 @@
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet, LogBox, Animated } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, LogBox, Animated, Image, Text, Alert, Modal, TouchableOpacity } from 'react-native';
 
 LogBox.ignoreLogs([
   'InteractionManager has been deprecated',
@@ -77,42 +77,34 @@ export default function App() {
   const [initializing, setInitializing] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
 
-  const circleScale = React.useRef(new Animated.Value(0.1)).current;
-  const walletScale = React.useRef(new Animated.Value(0.3)).current;
-  const opacityValue = React.useRef(new Animated.Value(0)).current;
+  const [globalAlertVisible, setGlobalAlertVisible] = useState(false);
+  const [globalAlertTitle, setGlobalAlertTitle] = useState('');
+  const [globalAlertMessage, setGlobalAlertMessage] = useState('');
+  const [globalAlertButtons, setGlobalAlertButtons] = useState<any[]>([]);
 
   useEffect(() => {
-    Animated.sequence([
-      Animated.parallel([
-        Animated.spring(walletScale, {
-          toValue: 1,
-          tension: 10,
-          friction: 4,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacityValue, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.spring(circleScale, {
-        toValue: 1,
-        tension: 15,
-        friction: 3,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    Alert.alert = (title: string, message?: string, buttons?: any[]) => {
+      setGlobalAlertTitle(title || '');
+      setGlobalAlertMessage(message || '');
+      if (buttons && buttons.length > 0) {
+        let sortedButtons = [...buttons];
+        const cancelIndex = sortedButtons.findIndex(b => b.style === 'cancel' || (b.text && b.text.toLowerCase() === 'cancel'));
+        if (cancelIndex > -1) {
+          const [cancelBtn] = sortedButtons.splice(cancelIndex, 1);
+          sortedButtons.push(cancelBtn);
+        }
+        setGlobalAlertButtons(sortedButtons);
+      } else {
+        setGlobalAlertButtons([{ text: 'OK', onPress: () => {} }]);
+      }
+      setGlobalAlertVisible(true);
+    };
+  }, []);
 
+  useEffect(() => {
     const timer = setTimeout(() => {
-      Animated.timing(opacityValue, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }).start(() => {
-        setShowSplash(false);
-      });
-    }, 2800);
+      setShowSplash(false);
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, []);
@@ -195,40 +187,26 @@ export default function App() {
 
   if (showSplash || initializing) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: darkMode ? '#121212' : '#E6F4FE' }]}>
-        <View style={{ width: 160, height: 160, justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
-          {/* Sliced Circle Layer (renders behind because it is first in JSX) */}
-          <Animated.Image
-            source={require('./assets/splash_circle.png')}
+      <View style={[styles.loadingContainer, { backgroundColor: darkMode ? '#121212' : '#FFFFFF' }]}>
+        <View style={{ width: 140, height: 140, backgroundColor: '#FFFFFF', borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 }}>
+          <Image
+            source={require('./assets/icon.png')}
             style={{
-              position: 'absolute',
-              width: 160,
-              height: 160,
-              opacity: opacityValue,
-              transform: [{ scale: circleScale }],
-            }}
-          />
-          {/* Sliced Wallet Layer (renders in front because it is second in JSX) */}
-          <Animated.Image
-            source={require('./assets/splash_wallet.png')}
-            style={{
-              position: 'absolute',
-              width: 160,
-              height: 160,
-              opacity: opacityValue,
-              transform: [{ scale: walletScale }],
+              width: 120,
+              height: 120,
+              borderRadius: 24,
+              backgroundColor: '#FFFFFF',
             }}
           />
         </View>
-        <Animated.Text style={{
+        <Text style={{
           marginTop: 24,
           fontSize: 22,
           fontWeight: 'bold',
           color: colors.primary,
-          opacity: opacityValue
         }}>
           Share Expense
-        </Animated.Text>
+        </Text>
       </View>
     );
   }
@@ -250,6 +228,67 @@ export default function App() {
             )}
           </Stack.Navigator>
         </NavigationContainer>
+
+        {/* Global Styled Alert Modal (Green background, white text) */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={globalAlertVisible}
+          onRequestClose={() => setGlobalAlertVisible(false)}
+        >
+          <View style={styles.modalOverlayCentered}>
+            <View style={{ 
+              backgroundColor: '#2E7D32', 
+              borderRadius: 16, 
+              padding: 24, 
+              width: '85%', 
+              alignItems: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.25,
+              shadowRadius: 10,
+              elevation: 5
+            }}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 12, textAlign: 'center' }}>
+                {globalAlertTitle}
+              </Text>
+              {!!globalAlertMessage && (
+                <Text style={{ fontSize: 14, color: '#E8F5E9', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
+                  {globalAlertMessage}
+                </Text>
+              )}
+              <View style={{ width: '100%', gap: 10 }}>
+                {globalAlertButtons.map((btn, index) => (
+                  <TouchableOpacity 
+                    key={index}
+                    style={{ 
+                      backgroundColor: '#FFFFFF', 
+                      paddingHorizontal: 20, 
+                      paddingVertical: 12, 
+                      borderRadius: 10, 
+                      width: '100%', 
+                      alignItems: 'center'
+                    }}
+                    onPress={() => {
+                      setGlobalAlertVisible(false);
+                      if (btn.onPress) {
+                        setTimeout(() => btn.onPress(), 100);
+                      }
+                    }}
+                  >
+                    <Text style={{ 
+                      color: btn.style === 'destructive' ? '#D32F2F' : '#2E7D32', 
+                      fontWeight: 'bold', 
+                      fontSize: 14 
+                    }}>
+                      {btn.text}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -261,5 +300,11 @@ const getStyles = (colors: any) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
+  },
+  modalOverlayCentered: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

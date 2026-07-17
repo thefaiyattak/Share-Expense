@@ -250,20 +250,20 @@ export const pdfService = {
       : params.expenses;
 
     const rows = filteredExpenses.map((e) => {
-      const dateStr = new Date(e.date).toLocaleDateString('en-GB');
+      const dateStr = e.date ? new Date(e.date).toLocaleDateString('en-GB') : '';
       return [
-        dateStr,
-        e.itemName,
-        e.quantity,
-        e.price.toString(),
-        e.category,
-        e.userName,
+        String(dateStr || ''),
+        String(e.itemName || ''),
+        String(e.quantity || ''),
+        String(e.price ?? '0'),
+        String(e.category || ''),
+        String(e.userName || ''),
       ];
     });
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(','))
+      ...rows.map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(','))
     ].join('\n');
 
     const reportLabel = params.targetUserId ? `Individual_${params.targetUserId}` : 'Collective';

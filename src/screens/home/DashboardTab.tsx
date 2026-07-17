@@ -9,7 +9,9 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
-  FlatList
+  FlatList,
+  RefreshControl,
+  Dimensions
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStore } from '../../store/useStore';
@@ -35,6 +37,19 @@ export default function DashboardTab() {
   } = useStore();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    const today = new Date();
+    setSelectedDate(today);
+    if (flatListRef.current) {
+      const screenWidth = Dimensions.get('window').width;
+      const offset = (15 * 50) + 25 - (screenWidth / 2);
+      flatListRef.current.scrollToOffset({ offset, animated: true });
+    }
+    setTimeout(() => setRefreshing(false), 1000);
+  }, []);
 
   const flatListRef = useRef<FlatList>(null);
 
@@ -48,12 +63,19 @@ export default function DashboardTab() {
     return list;
   }, []);
 
+  const initialOffset = useMemo(() => {
+    const screenWidth = Dimensions.get('window').width;
+    return (15 * 50) + 25 - (screenWidth / 2);
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       if (flatListRef.current) {
-        flatListRef.current.scrollToIndex({ index: 15, animated: false, viewPosition: 0.5 });
+        const screenWidth = Dimensions.get('window').width;
+        const offset = (15 * 50) + 25 - (screenWidth / 2);
+        flatListRef.current.scrollToOffset({ offset, animated: false });
       }
-    }, 200);
+    }, 500);
     return () => clearTimeout(timer);
   }, []);
 
@@ -210,7 +232,11 @@ export default function DashboardTab() {
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
   
-  const totalSpending = currentMonthExpenses.reduce((sum, e) => sum + e.price * e.quantity, 0);
+  const totalSpending = currentMonthExpenses.reduce((sum, e) => {
+    const price = Number(e.price) || 0;
+    const quantity = Number(e.quantity) || 0;
+    return sum + (price * quantity);
+  }, 0);
 
   // Re-calculate user share and wallet balance
   const memberIds = members.map(m => m.id);
@@ -245,10 +271,18 @@ export default function DashboardTab() {
           getItemLayout={(data, index) => (
             { length: 50, offset: 50 * index, index }
           )}
+          contentOffset={{ x: initialOffset, y: 0 }}
           snapToInterval={50}
           snapToAlignment="center"
           decelerationRate="fast"
           contentContainerStyle={{ paddingHorizontal: 150 }}
+          onLayout={() => {
+            if (flatListRef.current) {
+              const screenWidth = Dimensions.get('window').width;
+              const offset = (15 * 50) + 25 - (screenWidth / 2);
+              flatListRef.current.scrollToOffset({ offset, animated: false });
+            }
+          }}
           renderItem={({ item, index }) => {
             const isToday = item.getDate() === new Date().getDate() && item.getMonth() === new Date().getMonth() && item.getFullYear() === new Date().getFullYear();
             const isSelected = item.getDate() === selectedDate.getDate() && item.getMonth() === selectedDate.getMonth() && item.getFullYear() === selectedDate.getFullYear();
@@ -283,7 +317,11 @@ export default function DashboardTab() {
              d.getFullYear() === selectedDate.getFullYear() &&
              e.category === cat;
     });
-    return dayExpenses.reduce((sum, e) => sum + e.price * e.quantity, 0);
+    return dayExpenses.reduce((sum, e) => {
+      const price = Number(e.price) || 0;
+      const quantity = Number(e.quantity) || 0;
+      return sum + (price * quantity);
+    }, 0);
   };
 
   const mealCategories = [
@@ -300,7 +338,17 @@ export default function DashboardTab() {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       )}
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView 
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
         {/* Header Greeting */}
         <View style={styles.header}>
           <View>

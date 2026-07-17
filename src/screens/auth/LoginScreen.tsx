@@ -17,7 +17,15 @@ import { authService } from '../../services/authService';
 import { useStore } from '../../store/useStore';
 import { getThemeColors } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+let GoogleSignin: any = null;
+let statusCodes: any = { SIGN_IN_CANCELLED: '12501', IN_PROGRESS: '12502', PLAY_SERVICES_NOT_AVAILABLE: '12500' };
+try {
+  const gsignin = require('@react-native-google-signin/google-signin');
+  GoogleSignin = gsignin.GoogleSignin;
+  statusCodes = gsignin.statusCodes || statusCodes;
+} catch (e) {
+  console.log('GoogleSignin is not natively available in this build (e.g. Expo Go)');
+}
 
 export default function LoginScreen() {
   const { setCurrentAppUser, setUserTeams, darkMode } = useStore();
@@ -39,12 +47,16 @@ export default function LoginScreen() {
 
   useEffect(() => {
     try {
-      GoogleSignin.configure({
-        // Web Client ID from Google Cloud / Firebase console
-        webClientId: '20947220033-fvnaobstfc3aktvur0kf6e1cquioq6qb.apps.googleusercontent.com',
-        offlineAccess: true,
-      });
-      setIsNativeAvailable(true);
+      if (GoogleSignin) {
+        GoogleSignin.configure({
+          // Web Client ID from Google Cloud / Firebase console
+          webClientId: '20947220033-fvnaobstfc3aktvur0kf6e1cquioq6qb.apps.googleusercontent.com',
+          offlineAccess: true,
+        });
+        setIsNativeAvailable(true);
+      } else {
+        setIsNativeAvailable(false);
+      }
     } catch (e) {
       console.log('GoogleSignin config bypassed (Expo Go):', e);
       setIsNativeAvailable(false);
@@ -132,7 +144,7 @@ export default function LoginScreen() {
         <View style={styles.header}>
           <Image 
             source={require('../../../assets/icon.png')} 
-            style={{ width: 100, height: 100, marginBottom: 12, borderRadius: 20 }} 
+            style={{ width: 100, height: 100, marginBottom: 12, borderRadius: 20, backgroundColor: '#FFFFFF' }} 
           />
           <Text style={styles.title}>Share Expense</Text>
           <Text style={styles.subtitle}>by fyntech</Text>
@@ -230,7 +242,7 @@ export default function LoginScreen() {
           visible={alertVisible}
           onRequestClose={() => setAlertVisible(false)}
         >
-          <View style={styles.modalOverlay}>
+          <View style={styles.modalOverlayCentered}>
             <View style={{ 
               backgroundColor: alertIsError ? colors.error : '#2E7D32', 
               borderRadius: 16, 
@@ -387,6 +399,12 @@ const getStyles = (colors: any) => StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
+  },
+  modalOverlayCentered: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalContent: {
     backgroundColor: colors.surface,

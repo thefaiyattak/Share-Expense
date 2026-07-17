@@ -92,10 +92,21 @@ export default function UserDetailScreen() {
   }, [selectedExpense]);
 
   // SVG Gauge calculations
-  const usagePct = wallet > 0 ? Math.min(spent / wallet, 1) : 0;
+  const spentPct = wallet > 0 ? Math.max(0, Math.min(spent / wallet, 1)) : 0;
+  const leftPct = wallet > 0 ? Math.max(0, Math.min(left / wallet, 1)) : 0;
   const radius = 38;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - usagePct * circumference;
+  
+  const gap = 8; 
+  const totalGaps = spentPct > 0 && leftPct > 0 ? 2 * gap : 0;
+  const availableLength = circumference - totalGaps;
+  
+  const spentLength = spentPct * availableLength;
+  const leftLength = leftPct * availableLength;
+  
+  const spentStrokeDashoffset = - (gap / 2);
+  const leftStrokeDashoffset = - (spentLength + gap + (gap / 2));
+  const usagePct = spentPct;
 
   // Handle Wallet Update
   const handleUpdateWallet = async () => {
@@ -234,29 +245,20 @@ export default function UserDetailScreen() {
                 <Ionicons name="wallet" size={20} color={colors.primaryDark} />
                 {isAuthorized && <Ionicons name="create-outline" size={14} color={colors.primaryDark} style={{ marginLeft: 'auto' }} />}
               </View>
-              <Text style={[styles.fValue, { color: colors.primaryDark }]}>{formatAmount(wallet)}</Text>
+              <Text style={[styles.fValue, { color: colors.primaryDark }]} numberOfLines={1}>{formatAmount(wallet)}</Text>
               <Text style={[styles.fLabel, { color: colors.primaryDark }]}>Wallet</Text>
             </TouchableOpacity>
 
             <View style={[styles.fCard, { backgroundColor: '#FFEBEE', marginLeft: 8 }]}>
               <Ionicons name="cart" size={20} color={colors.error} />
-              <Text style={[styles.fValue, { color: colors.error }]}>{formatAmount(spent)}</Text>
+              <Text style={[styles.fValue, { color: colors.error }]} numberOfLines={1}>{formatAmount(spent)}</Text>
               <Text style={[styles.fLabel, { color: colors.error }]}>Spent</Text>
             </View>
-          </View>
 
-          <View style={[styles.row, { marginTop: 8 }]}>
-            <View style={[styles.fCard, { backgroundColor: '#FFF3E0' }]}>
-              <Ionicons name="save" size={20} color="#E65100" />
-              <Text style={[styles.fValue, { color: "#E65100" }]}>{formatAmount(left)}</Text>
-              <Text style={[styles.fLabel, { color: "#E65100" }]}>Left</Text>
-            </View>
-            <View style={[styles.fCard, { backgroundColor: bColor + '1F', marginLeft: 8 }]}>
-              <Ionicons name={over ? "trending-up" : "trending-down"} size={20} color={bColor} />
-              <Text style={[styles.fValue, { color: bColor }]}>
-                {over ? '+' : '-'} {formatAmount(Math.abs(balance))}
-              </Text>
-              <Text style={[styles.fLabel, { color: bColor }]}>{over ? 'Over' : 'Under'}</Text>
+            <View style={[styles.fCard, { backgroundColor: '#FFF9C4', marginLeft: 8 }]}>
+              <Ionicons name="save" size={20} color="#F57F17" />
+              <Text style={[styles.fValue, { color: '#F57F17' }]} numberOfLines={1}>{formatAmount(left)}</Text>
+              <Text style={[styles.fLabel, { color: '#F57F17' }]}>Left</Text>
             </View>
           </View>
         </View>
@@ -285,26 +287,46 @@ export default function UserDetailScreen() {
           <View style={styles.gaugeContainer}>
             <View style={styles.gaugeSvg}>
               <Svg height="100" width="100" viewBox="0 0 100 100">
+                {/* Background base circle (Added - Green) */}
                 <Circle
                   cx="50"
                   cy="50"
                   r={radius}
                   fill="transparent"
-                  stroke={colors.divider}
+                  stroke={colors.primary}
                   strokeWidth="8"
+                  opacity={0.2}
                 />
-                <Circle
-                  cx="50"
-                  cy="50"
-                  r={radius}
-                  fill="transparent"
-                  stroke={usagePct > 0.8 ? colors.error : colors.primary}
-                  strokeWidth="8"
-                  strokeDasharray={`${circumference} ${circumference}`}
-                  strokeDashoffset={strokeDashoffset}
-                  strokeLinecap="round"
-                  transform="rotate(-90, 50, 50)"
-                />
+                {/* Spent Segment (Red) */}
+                {spentPct > 0 && (
+                  <Circle
+                    cx="50"
+                    cy="50"
+                    r={radius}
+                    fill="transparent"
+                    stroke={colors.error}
+                    strokeWidth="8"
+                    strokeDasharray={`${spentLength} ${circumference}`}
+                    strokeDashoffset={spentStrokeDashoffset}
+                    strokeLinecap="round"
+                    transform="rotate(-90, 50, 50)"
+                  />
+                )}
+                {/* Left Segment (Yellow) */}
+                {leftPct > 0 && (
+                  <Circle
+                    cx="50"
+                    cy="50"
+                    r={radius}
+                    fill="transparent"
+                    stroke="#F57F17"
+                    strokeWidth="8"
+                    strokeDasharray={`${leftLength} ${circumference}`}
+                    strokeDashoffset={leftStrokeDashoffset}
+                    strokeLinecap="round"
+                    transform="rotate(-90, 50, 50)"
+                  />
+                )}
               </Svg>
               <View style={styles.gaugeTextOverlay}>
                 <Text style={styles.gaugeText}>{Math.round(usagePct * 100)}%</Text>
@@ -314,18 +336,18 @@ export default function UserDetailScreen() {
             <View style={styles.gaugeDetails}>
               <View style={styles.gaugeRow}>
                 <View style={[styles.gaugeDot, { backgroundColor: colors.primary }]} />
-                <Text style={styles.gaugeLabel}>Added</Text>
+                <Text style={styles.gaugeLabel}>Added (100%)</Text>
                 <Text style={styles.gaugeValue}>{formatAmount(wallet)}</Text>
               </View>
               <View style={styles.gaugeRow}>
                 <View style={[styles.gaugeDot, { backgroundColor: colors.error }]} />
-                <Text style={styles.gaugeLabel}>Spent</Text>
+                <Text style={styles.gaugeLabel}>Spent ({Math.round(spentPct * 100)}%)</Text>
                 <Text style={styles.gaugeValue}>{formatAmount(spent)}</Text>
               </View>
               <View style={[styles.gaugeRow, styles.gaugeRowTotal]}>
-                <View style={[styles.gaugeDot, { backgroundColor: left >= 0 ? colors.primary : colors.error }]} />
-                <Text style={styles.gaugeLabel}>Left</Text>
-                <Text style={[styles.gaugeValue, { fontWeight: 'bold' }]}>{formatAmount(left)}</Text>
+                <View style={[styles.gaugeDot, { backgroundColor: left >= 0 ? '#F57F17' : colors.error }]} />
+                <Text style={styles.gaugeLabel}>Left ({Math.round(leftPct * 100)}%)</Text>
+                <Text style={[styles.gaugeValue, { fontWeight: 'bold', color: left >= 0 ? '#F57F17' : colors.error }]}>{formatAmount(left)}</Text>
               </View>
             </View>
           </View>

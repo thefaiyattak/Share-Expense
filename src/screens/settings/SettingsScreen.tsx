@@ -13,7 +13,8 @@ import {
   Platform,
   TextInput,
   ActivityIndicator,
-  Image
+  Image,
+  RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -42,6 +43,12 @@ export default function SettingsScreen() {
 
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1000);
+  }, []);
   const [joinModalVisible, setJoinModalVisible] = useState(false);
   
   // Separate modals for Admin and Member Groups settings
@@ -452,7 +459,17 @@ export default function SettingsScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       )}
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView 
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
         <Text style={styles.screenHeader}>Profile & Settings</Text>
 
         {/* Profile Settings */}
@@ -984,7 +1001,7 @@ export default function SettingsScreen() {
         visible={aboutModalVisible}
         onRequestClose={() => setAboutModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.modalOverlayCentered}>
           <View style={{ 
             backgroundColor: '#2E7D32', 
             borderRadius: 16, 
@@ -997,6 +1014,10 @@ export default function SettingsScreen() {
             shadowRadius: 10,
             elevation: 5
           }}>
+            <Image 
+              source={require('../../../assets/icon.png')} 
+              style={{ width: 80, height: 80, borderRadius: 16, backgroundColor: '#FFFFFF', marginBottom: 16 }} 
+            />
             <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 12 }}>Share Expense</Text>
             <Text style={{ fontSize: 14, color: '#E8F5E9', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
               Version 1.0.0{'\n'}Developed by: fyntech
@@ -1358,6 +1379,12 @@ const getStyles = (colors: any) => StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
+  },
+  modalOverlayCentered: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalContent: {
     backgroundColor: colors.surface,

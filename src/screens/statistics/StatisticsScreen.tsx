@@ -5,7 +5,8 @@ import {
   Text, 
   ScrollView, 
   TouchableOpacity,
-  TextInput
+  TextInput,
+  RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStore } from '../../store/useStore';
@@ -18,6 +19,12 @@ export default function StatisticsScreen() {
   const [filter, setFilter] = useState('Weekly');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1000);
+  }, []);
 
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors);
@@ -63,7 +70,7 @@ export default function StatisticsScreen() {
 
   filteredExpenses.forEach((e) => {
     if (categoryTotals[e.category] !== undefined) {
-      categoryTotals[e.category] += e.price;
+      categoryTotals[e.category] += (Number(e.price) || 0) * (Number(e.quantity) || 1);
     }
   });
 
@@ -160,7 +167,7 @@ export default function StatisticsScreen() {
         const expDate = new Date(e.date);
         if (expDate.toDateString() === dateStr) {
           if (catDayTotals[e.category] !== undefined) {
-            catDayTotals[e.category] += e.price;
+            catDayTotals[e.category] += (Number(e.price) || 0) * (Number(e.quantity) || 1);
           }
         }
       });
@@ -223,7 +230,17 @@ export default function StatisticsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView 
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
         <Text style={styles.screenHeader}>Statistics</Text>
 
         {/* Tab Filters */}
@@ -317,7 +334,11 @@ export default function StatisticsScreen() {
             {members.map((m) => {
               const mSpent = filteredExpenses
                 .filter((e) => e.userId === m.id)
-                .reduce((sum, e) => sum + e.price, 0);
+                .reduce((sum, e) => {
+                  const price = Number(e.price) || 0;
+                  const quantity = Number(e.quantity) || 0;
+                  return sum + (price * quantity);
+                }, 0);
               return (
                 <View 
                   key={m.id} 
