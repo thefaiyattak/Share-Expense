@@ -100,14 +100,37 @@ export default function ExpensesScreen() {
     
     const runPdfExport = async (targetUserId?: string, userList?: any[]) => {
       try {
-        await pdfService.generatePdf({
+        const uri = await pdfService.generatePdf({
           users: userList || members,
           expenses: expenses,
           dateRange: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
           teamName: currentAppUser.teamName || 'Share Expense',
           currency,
-          targetUserId
+          targetUserId,
+          skipShare: true
         });
+
+        const reportName = targetUserId 
+          ? `Statement_${(userList || members).find(u => u.id === targetUserId)?.name || targetUserId}`
+          : 'Statement_Collective';
+
+        setTimeout(() => {
+          Alert.alert(
+            'PDF Report Ready',
+            'What would you like to do?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { 
+                text: 'Save to Device', 
+                onPress: () => pdfService.saveFileToDevice(uri, `${reportName}_${Date.now()}.pdf`, 'application/pdf') 
+              },
+              { 
+                text: 'Share', 
+                onPress: () => pdfService.shareFile(uri, 'application/pdf', 'Share PDF Statement') 
+              }
+            ]
+          );
+        }, 100);
       } catch (e: any) {
         Alert.alert('PDF Export Failed', e.message);
       }
@@ -155,11 +178,34 @@ export default function ExpensesScreen() {
 
     const runCsvExport = async (targetUserId?: string) => {
       try {
-        await pdfService.generateCsv({
+        const uri = await pdfService.generateCsv({
           expenses: expenses,
           currency,
-          targetUserId
+          targetUserId,
+          skipShare: true
         });
+
+        const reportName = targetUserId
+          ? `Statement_${members.find(u => u.id === targetUserId)?.name || targetUserId}`
+          : 'Statement_Collective';
+
+        setTimeout(() => {
+          Alert.alert(
+            'CSV Report Ready',
+            'What would you like to do?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { 
+                text: 'Save to Device', 
+                onPress: () => pdfService.saveFileToDevice(uri, `${reportName}_${Date.now()}.csv`, 'text/csv') 
+              },
+              { 
+                text: 'Share', 
+                onPress: () => pdfService.shareFile(uri, 'text/csv', 'Share CSV Statement') 
+              }
+            ]
+          );
+        }, 100);
       } catch (e: any) {
         Alert.alert('CSV Export Failed', e.message);
       }

@@ -419,14 +419,32 @@ export default function UserDetailScreen() {
                   onPress: async () => {
                     try {
                       setLoading(true);
-                      await pdfService.generatePdf({
+                      const uri = await pdfService.generatePdf({
                         users: [userObj as any],
                         expenses: expenses,
                         dateRange: 'All time',
                         teamName: currentAppUser?.teamName || 'Share Expense',
                         currency: currency,
-                        targetUserId: userId
+                        targetUserId: userId,
+                        skipShare: true
                       });
+                      setTimeout(() => {
+                        Alert.alert(
+                          'PDF Statement Ready',
+                          'What would you like to do?',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { 
+                              text: 'Save to Device', 
+                              onPress: () => pdfService.saveFileToDevice(uri, `Statement_${userObj.name}_${Date.now()}.pdf`, 'application/pdf') 
+                            },
+                            { 
+                              text: 'Share', 
+                              onPress: () => pdfService.shareFile(uri, 'application/pdf', 'Share PDF Statement') 
+                            }
+                          ]
+                        );
+                      }, 100);
                     } catch (err: any) {
                       Alert.alert('Error', err.message || 'Failed to generate PDF');
                     } finally {
@@ -439,11 +457,29 @@ export default function UserDetailScreen() {
                   onPress: async () => {
                     try {
                       setLoading(true);
-                      await pdfService.generateCsv({
+                      const uri = await pdfService.generateCsv({
                         expenses: expenses,
                         currency: currency,
-                        targetUserId: userId
+                        targetUserId: userId,
+                        skipShare: true
                       });
+                      setTimeout(() => {
+                        Alert.alert(
+                          'CSV Statement Ready',
+                          'What would you like to do?',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { 
+                              text: 'Save to Device', 
+                              onPress: () => pdfService.saveFileToDevice(uri, `Statement_${userObj.name}_${Date.now()}.csv`, 'text/csv') 
+                            },
+                            { 
+                              text: 'Share', 
+                              onPress: () => pdfService.shareFile(uri, 'text/csv', 'Share CSV Statement') 
+                            }
+                          ]
+                        );
+                      }, 100);
                     } catch (err: any) {
                       Alert.alert('Error', err.message || 'Failed to generate CSV');
                     } finally {

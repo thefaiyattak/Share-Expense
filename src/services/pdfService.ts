@@ -1,6 +1,7 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Platform, Alert } from 'react-native';
 import { AppUser, Expense } from '../models/types';
 
 export const pdfService = {
@@ -11,6 +12,7 @@ export const pdfService = {
     teamName: string;
     currency?: string;
     targetUserId?: string;
+    skipShare?: boolean;
   }): Promise<string> => {
     const currency = params.currency || 'Rs.';
     
@@ -231,7 +233,7 @@ export const pdfService = {
     `;
 
     const { uri } = await Print.printToFileAsync({ html: htmlContent });
-    if (await Sharing.isAvailableAsync()) {
+    if (!params.skipShare && (await Sharing.isAvailableAsync())) {
       await Sharing.shareAsync(uri);
     }
     return uri;
@@ -241,6 +243,7 @@ export const pdfService = {
     expenses: Expense[];
     currency?: string;
     targetUserId?: string;
+    skipShare?: boolean;
   }): Promise<string> => {
     const currency = params.currency || 'Rs.';
     const headers = ['Date', 'Item', 'Qty/Desc', 'Price', 'Category', 'By'];
@@ -267,12 +270,71 @@ export const pdfService = {
     ].join('\n');
 
     const reportLabel = params.targetUserId ? `Individual_${params.targetUserId}` : 'Collective';
-    const filename = `${(FileSystem as any).documentDirectory}ShareExpense_${reportLabel}_${Date.now()}.csv`;
-    await (FileSystem as any).writeAsStringAsync(filename, csvContent, { encoding: (FileSystem as any).EncodingType.UTF8 });
+    const filename = `${FileSystem.documentDirectory}ShareExpense_${reportLabel}_${Date.now()}.csv`;
+    await FileSystem.writeAsStringAsync(filename, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
     
-    if (await Sharing.isAvailableAsync()) {
+    if (!params.skipShare && (await Sharing.isAvailableAsync())) {
       await Sharing.shareAsync(filename, { mimeType: 'text/csv', dialogTitle: 'Share CSV Statement' });
     }
     return filename;
+  },
+
+  shareFile: async (uri: string, mimeType: string, dialogTitle?: string): Promise<boolean> => {
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(uri, { mimeType, dialogTitle: dialogTitle || 'Share Report' });
+      return true;
+    } else {
+      Alert.alert('Error', 'Sharing is not available on this device.');
+      return false;
+    }
+  },
+
+  saveFileToDevice: async (localUri: string, fileName: string, mimeType: string): Promise<boolean> => {
+    try {
+      if (Platform.OS === 'android') {
+        const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (!permissions.granted) {
+          Alert.alert('Permission Denied', 'Storage directory permission is required to save reports.');
+          return false;
+        }
+
+        let fileContent: string;
+        let encoding: any;
+
+        if (mimeType === 'application/pdf') {
+          fileContent = await FileSystem.readAsStringAsync(localUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          encoding = FileSystem.EncodingType.Base64;
+        } else {
+          fileContent = await FileSystem.readAsStringAsync(localUri, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
+          encoding = FileSystem.EncodingType.UTF8;
+        }
+
+        const createdUri = await FileSystem.StorageAccessFramework.createFileAsync(
+          permissions.directoryUri,
+          fileName,
+          mimeType
+        );
+
+        await FileSystem.writeAsStringAsync(createdUri, fileContent, { encoding });
+        Alert.alert('Success', 'Report saved directly to your selected folder!');
+        return true;
+      } else {
+        // iOS provides native save to file options directly through the Sharing Sheet
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(localUri, { mimeType, dialogTitle: 'Save Report' });
+          return true;
+        } else {
+          Alert.alert('Error', 'Saving is not available on this device.');
+          return false;
+        }
+      }
+    } catch (error: any) {
+      Alert.alert('Error', `Failed to save file: ${error.message || error}`);
+      return false;
+    }
   }
 };
