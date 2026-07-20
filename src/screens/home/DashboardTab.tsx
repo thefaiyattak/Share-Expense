@@ -33,6 +33,7 @@ export default function DashboardTab() {
     attendance, 
     setCurrentAppUser, 
     setUserTeams,
+    setAttendance,
     darkMode
   } = useStore();
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -63,20 +64,35 @@ export default function DashboardTab() {
     return list;
   }, []);
 
+  const selectedIndex = useMemo(() => {
+    return calendarDays.findIndex(d => 
+      d.getDate() === selectedDate.getDate() &&
+      d.getMonth() === selectedDate.getMonth() &&
+      d.getFullYear() === selectedDate.getFullYear()
+    );
+  }, [calendarDays, selectedDate]);
+
+  const [initialScrolled, setInitialScrolled] = useState(false);
+
+  useEffect(() => {
+    if (flatListRef.current && selectedIndex !== -1) {
+      const timer = setTimeout(() => {
+        flatListRef.current?.scrollToIndex({
+          index: selectedIndex,
+          animated: initialScrolled,
+          viewPosition: 0.5
+        });
+        if (!initialScrolled) {
+          setInitialScrolled(true);
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedIndex, initialScrolled]);
+
   const initialOffset = useMemo(() => {
     const screenWidth = Dimensions.get('window').width;
     return (15 * 50) + 25 - (screenWidth / 2);
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (flatListRef.current) {
-        const screenWidth = Dimensions.get('window').width;
-        const offset = (15 * 50) + 25 - (screenWidth / 2);
-        flatListRef.current.scrollToOffset({ offset, animated: false });
-      }
-    }, 500);
-    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -114,6 +130,24 @@ export default function DashboardTab() {
       setNotifications(notifs);
     });
   }, [currentAppUser]);
+
+  // Sync attendance listener dynamically with the month and year of the selectedDate
+  useEffect(() => {
+    if (!currentAppUser || !currentAppUser.teamId) {
+      setAttendance([]);
+      return;
+    }
+
+    const unsub = require('../../services/expenseService').expenseService.getMonthAttendance(
+      currentAppUser.teamId,
+      selectedDate,
+      (data: any) => {
+        setAttendance(data);
+      }
+    );
+
+    return () => unsub();
+  }, [currentAppUser?.teamId, selectedDate.getMonth(), selectedDate.getFullYear()]);
 
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors, darkMode);
@@ -251,6 +285,103 @@ export default function DashboardTab() {
 
   const totalWallet = members.reduce((sum, m) => sum + (m.walletBalance || 0), 0);
 
+  // Selected date attendance states
+  const selectedDateStr = selectedDate.toISOString().substring(0, 10);
+  const myAttendance = attendance.find(a => {
+    try {
+      const aDateStr = new Date(a.date).toISOString().substring(0, 10);
+      return a.userId === currentAppUser?.id && aDateStr === selectedDateStr;
+    } catch {
+      return false;
+    }
+  });
+
+  const attendedBreakfast = myAttendance ? myAttendance.attendedBreakfast : false;
+  const attendedLunch = myAttendance ? myAttendance.attendedLunch : false;
+  const attendedDinner = myAttendance ? myAttendance.attendedDinner : false;
+
+  const handleToggleMealAttendance = async (meal: 'breakfast' | 'lunch' | 'dinner') => {
+    if (!currentAppUser) return;
+    const teamIdToUse = currentAppUser.teamId || `personal_${currentAppUser.id.split('_')[0]}`;
+    
+    const currentMeals: any[] = [];
+    if (attendedBreakfast) currentMeals.push('breakfast');
+    if (attendedLunch) currentMeals.push('lunch');
+    if (attendedDinner) currentMeals.push('dinner');
+    
+    const prevMeals = [...currentMeals];
+    
+    let newMeals: any[] = [];
+    if (currentMeals.includes(meal)) {
+      newMeals = currentMeals.filter(m => m !== meal);
+    } else {
+      newMeals = [...currentMeals, meal];
+    }
+    
+    const isPresent = newMeals.length > 0;
+    
+    try {
+      await require('../../services/expenseService').expenseService.markAttendance({
+        userId: currentAppUser.id,
+        userName: currentAppUser.name,
+        date: selectedDate,
+        isPresent,
+        meals: newMeals,
+        teamId: teamIdToUse,
+        prevMeals
+      });
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to update attendance');
+    }
+  };
+
+  const renderAttendanceMarking = () => {
+    if (!currentAppUser) return null;
+    
+    return (
+      <View style={styles.attendanceContainer}>
+        <Text style={styles.attendanceTitle}>Meals for the Day</Text>
+        <View style={styles.mealsRow}>
+          <TouchableOpacity 
+            style={[styles.mealCheckbox, attendedBreakfast && styles.mealCheckboxActive]}
+            onPress={() => handleToggleMealAttendance('breakfast')}
+          >
+            <Ionicons 
+              name={attendedBreakfast ? "checkbox-outline" : "square-outline"} 
+              size={16} 
+              color={attendedBreakfast ? colors.primary : colors.textSecondary} 
+            />
+            <Text style={[styles.mealText, attendedBreakfast && styles.mealTextActive]}>Breakfast</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.mealCheckbox, attendedLunch && styles.mealCheckboxActive]}
+            onPress={() => handleToggleMealAttendance('lunch')}
+          >
+            <Ionicons 
+              name={attendedLunch ? "checkbox-outline" : "square-outline"} 
+              size={16} 
+              color={attendedLunch ? colors.primary : colors.textSecondary} 
+            />
+            <Text style={[styles.mealText, attendedLunch && styles.mealTextActive]}>Lunch</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.mealCheckbox, attendedDinner && styles.mealCheckboxActive]}
+            onPress={() => handleToggleMealAttendance('dinner')}
+          >
+            <Ionicons 
+              name={attendedDinner ? "checkbox-outline" : "square-outline"} 
+              size={16} 
+              color={attendedDinner ? colors.primary : colors.textSecondary} 
+            />
+            <Text style={[styles.mealText, attendedDinner && styles.mealTextActive]}>Dinner</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   // Calendar setup (31 days sliding list)
   const renderCalendar = () => {
     const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -272,15 +403,14 @@ export default function DashboardTab() {
             { length: 50, offset: 50 * index, index }
           )}
           contentOffset={{ x: initialOffset, y: 0 }}
-          snapToInterval={50}
-          snapToAlignment="center"
-          decelerationRate="fast"
           contentContainerStyle={{ paddingHorizontal: 150 }}
           onLayout={() => {
-            if (flatListRef.current) {
-              const screenWidth = Dimensions.get('window').width;
-              const offset = (15 * 50) + 25 - (screenWidth / 2);
-              flatListRef.current.scrollToOffset({ offset, animated: false });
+            if (flatListRef.current && selectedIndex !== -1) {
+              flatListRef.current.scrollToIndex({
+                index: selectedIndex,
+                animated: false,
+                viewPosition: 0.5
+              });
             }
           }}
           renderItem={({ item, index }) => {
@@ -472,6 +602,7 @@ export default function DashboardTab() {
 
         {/* Week Calendar */}
         {renderCalendar()}
+        {renderAttendanceMarking()}
 
         {/* Categories list */}
         <View style={styles.sectionHeader}>
@@ -882,6 +1013,51 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: colors.textPrimary,
+  },
+  attendanceContainer: {
+    backgroundColor: colors.cardBg,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  attendanceTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+    marginBottom: 10,
+  },
+  mealsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  mealCheckbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.inputBg,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    flex: 1,
+    justifyContent: 'center',
+    marginHorizontal: 4,
+  },
+  mealCheckboxActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  mealText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginLeft: 6,
+  },
+  mealTextActive: {
+    color: colors.primaryDark,
   },
   categoryRow: {
     flexDirection: 'row',

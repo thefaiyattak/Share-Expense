@@ -155,13 +155,14 @@ export const expenseService = {
     });
   },
 
-  // Attendance CRUD - correctly mapping meal arrays to boolean properties
   markAttendance: async (params: {
     userId: string;
+    userName?: string;
     date: Date;
     isPresent: boolean;
     meals: MealCategory[];
     teamId: string;
+    prevMeals?: MealCategory[];
   }): Promise<void> => {
     const dateStr = params.date.toISOString().substring(0, 10);
     const docId = `${params.userId}_${dateStr}`;
@@ -177,11 +178,54 @@ export const expenseService = {
     };
 
     await setDoc(doc(db, 'attendance', docId), attendanceData, { merge: true });
+
+    if (params.userName) {
+      const historyRef = doc(collection(db, 'editHistory'));
+      await setDoc(historyRef, {
+        entityId: docId,
+        entityType: 'attendance',
+        userId: params.userId,
+        userName: params.userName,
+        previousData: {
+          meals: params.prevMeals || [],
+          isPresent: (params.prevMeals || []).length > 0
+        },
+        newData: {
+          meals: params.meals,
+          isPresent: params.isPresent
+        },
+        timestamp: Timestamp.now()
+      });
+    }
   },
 
   getTeamAttendance: (teamId: string, date: Date, callback: (attendance: Attendance[]) => void) => {
     const s = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     const e = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
+
+    const q = query(
+      collection(db, 'attendance'),
+      where('teamId', '==', teamId),
+      where('date', '>=', Timestamp.fromDate(s)),
+      where('date', '<=', Timestamp.fromDate(e))
+    );
+
+    return onSnapshot(q, (snap) => {
+      const attendance = snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          date: (data.date as Timestamp).toDate()
+        } as Attendance;
+      });
+      callback(attendance);
+    });
+  },
+
+  getMonthAttendance: (teamId: string, date: Date, callback: (attendance: Attendance[]) => void) => {
+    const s = new Date(date.getFullYear(), date.getMonth(), 1);
+    const e = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59);
 
     const q = query(
       collection(db, 'attendance'),
@@ -218,20 +262,30 @@ export const expenseService = {
       const price = (Number(exp.price) || 0) * (Number(exp.quantity) || 1);
       let payers: string[] = [];
 
+      const expDateStr = exp.date.toISOString().substring(0, 10);
+      const dayAttendance = params.attendance.filter(a => {
+        try {
+          const aDateStr = a.date.toISOString().substring(0, 10);
+          return aDateStr === expDateStr;
+        } catch {
+          return false;
+        }
+      });
+
       if (exp.category === 'utility') {
         payers = params.allIds;
       } else if (exp.category === 'breakfast') {
-        payers = params.attendance.filter(a => a.attendedBreakfast).map(a => a.userId);
+        payers = dayAttendance.filter(a => a.attendedBreakfast).map(a => a.userId);
       } else if (exp.category === 'lunch') {
-        payers = params.attendance.filter(a => a.attendedLunch).map(a => a.userId);
+        payers = dayAttendance.filter(a => a.attendedLunch).map(a => a.userId);
       } else if (exp.category === 'dinner') {
-        payers = params.attendance.filter(a => a.attendedDinner).map(a => a.userId);
+        payers = dayAttendance.filter(a => a.attendedDinner).map(a => a.userId);
       } else {
         // none or uncategorized
-        payers = params.attendance.filter(a => a.isPresent).map(a => a.userId);
+        payers = dayAttendance.filter(a => a.isPresent).map(a => a.userId);
       }
 
-      if (payers.length === 0 || !payers.includes(exp.userId)) {
+      if (payers.length === 0) {
         // Purchaser pays it all
         shares[exp.userId] = (shares[exp.userId] || 0) + price;
       } else {

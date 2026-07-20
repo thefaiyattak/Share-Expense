@@ -12,6 +12,7 @@
     },
     "android": {
       "package": "com.fyntech.expensetracker",
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png"

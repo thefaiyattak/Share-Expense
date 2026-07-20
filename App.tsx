@@ -168,20 +168,9 @@ export default function App() {
       setMembers([currentAppUser]);
     }
 
-    // 3. Listen for today's Attendance
-    let unsubAttendance = () => {};
-    if (currentAppUser.teamId) {
-      unsubAttendance = expenseService.getTeamAttendance(currentAppUser.teamId, new Date(), (data) => {
-        setAttendance(data);
-      });
-    } else {
-      setAttendance([]);
-    }
-
     return () => {
       unsubExpenses();
       unsubMembers();
-      unsubAttendance();
     };
   }, [currentAppUser]);
 
