@@ -8,7 +8,10 @@ import {
   Alert,
   Modal,
   TextInput,
-  ActivityIndicator
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStore } from '../../store/useStore';
@@ -37,7 +40,8 @@ export default function UserDetailScreen() {
     wallet, 
     balance, 
     avatarBg, 
-    avatarText 
+    avatarText,
+    profileImageUrl
   } = route.params;
 
   const [loading, setLoading] = useState(false);
@@ -222,7 +226,11 @@ export default function UserDetailScreen() {
         </TouchableOpacity>
         <View style={styles.headerContent}>
           <View style={styles.avatarLarge}>
-            <Text style={styles.avatarLargeText}>{userInitials}</Text>
+            {profileImageUrl ? (
+              <Image source={{ uri: profileImageUrl }} style={styles.avatarLargeImg} />
+            ) : (
+              <Text style={styles.avatarLargeText}>{userInitials}</Text>
+            )}
           </View>
           <Text style={styles.userName}>{userName}</Text>
           {userId === currentAppUser?.id && (
@@ -503,7 +511,10 @@ export default function UserDetailScreen() {
         visible={walletModalVisible}
         onRequestClose={() => setWalletModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Set Wallet Balance</Text>
             <Text style={styles.modalSubtitle}>Specify the total deposit amount in this member's wallet.</Text>
@@ -529,7 +540,7 @@ export default function UserDetailScreen() {
               <Text style={styles.modalCancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Edit/Delete Expense Modal */}
@@ -542,7 +553,10 @@ export default function UserDetailScreen() {
           setSelectedExpense(null);
         }}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Modify Expense</Text>
             <Text style={styles.modalSubtitle}>Edit the details of this logged expense.</Text>
@@ -620,7 +634,7 @@ export default function UserDetailScreen() {
               <Text style={styles.modalCancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -655,6 +669,12 @@ const getStyles = (colors: any) => StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.25)',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarLargeImg: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
   },
   avatarLargeText: {
     color: '#FFFFFF',
@@ -848,7 +868,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontSize: 15,
   },
   globalLoader: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(255,255,255,0.7)',
     alignItems: 'center',
     justifyContent: 'center',

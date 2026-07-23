@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { Expense, Attendance, EditHistory, MealCategory } from '../models/types';
+import { notificationService } from './notificationService';
 
 export const expenseService = {
   addExpense: async (e: Omit<Expense, 'id'>): Promise<string> => {
@@ -25,6 +26,13 @@ export const expenseService = {
       lastEditedAt: e.lastEditedAt ? Timestamp.fromDate(e.lastEditedAt) : null,
     };
     const docRef = await addDoc(collection(db, 'expenses'), data);
+    if (e.teamId) {
+      await notificationService.notify(
+        e.teamId,
+        'New Expense Added',
+        `${e.userName} added ${e.itemName} (${e.currency || 'Rs.'} ${e.price})`
+      );
+    }
     return docRef.id;
   },
 
@@ -41,6 +49,17 @@ export const expenseService = {
       batch.set(docRef, data);
     });
     await batch.commit();
+
+    if (list.length > 0 && list[0].teamId) {
+      const first = list[0];
+      const totalAmount = list.reduce((sum, item) => sum + item.price, 0);
+      const itemsSummary = list.map(i => i.itemName).join(', ');
+      await notificationService.notify(
+        first.teamId,
+        'New Expense Added',
+        `${first.userName} added ${list.length} item(s): ${itemsSummary} (Total: ${first.currency || 'Rs.'} ${totalAmount})`
+      );
+    }
   },
 
   updateExpense: async (

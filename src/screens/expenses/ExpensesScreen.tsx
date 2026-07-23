@@ -10,7 +10,8 @@ import {
   Modal, 
   TextInput,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStore } from '../../store/useStore';
@@ -330,7 +331,7 @@ export default function ExpensesScreen() {
           />
         }
       >
-        <Text style={styles.screenHeader}>Dashboard</Text>
+        <Text style={styles.screenHeader}>Expenses</Text>
 
         {/* Collective Wallet Card */}
         <View style={styles.summaryCard}>
@@ -428,12 +429,17 @@ export default function ExpensesScreen() {
                 wallet: m.walletBalance, 
                 balance: bal,
                 avatarBg,
-                avatarText
+                avatarText,
+                profileImageUrl: m.profileImageUrl
               })}
             >
               <View style={styles.memberMainRow}>
-                <View style={[styles.avatar, { backgroundColor: avatarBg }]}>
-                  <Text style={[styles.avatarText, { color: avatarText }]}>{initials}</Text>
+                <View style={[styles.avatar, { backgroundColor: avatarBg, overflow: 'hidden' }]}>
+                  {m.profileImageUrl ? (
+                    <Image source={{ uri: m.profileImageUrl }} style={{ width: '100%', height: '100%', borderRadius: 20 }} />
+                  ) : (
+                    <Text style={[styles.avatarText, { color: avatarText }]}>{initials}</Text>
+                  )}
                 </View>
                 
                 <View style={styles.memberInfo}>

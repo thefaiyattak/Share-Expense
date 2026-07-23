@@ -28,6 +28,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from './firebase';
 import { AppUser, Team, UserRole } from '../models/types';
+import { notificationService } from './notificationService';
 
 export const authService = {
   // Get Auth State Changes Callback
@@ -126,6 +127,12 @@ export const authService = {
       memberIds: arrayUnion(userDocId)
     });
 
+    await notificationService.notify(
+      teamId,
+      'New Member Added',
+      `${name} (${email}) joined the group.`
+    );
+
     return newUser;
   },
 
@@ -204,6 +211,13 @@ export const authService = {
     await updateDoc(doc(db, 'teams', params.teamId), {
       memberIds: arrayUnion(userDocId)
     });
+
+    await notificationService.notify(
+      params.teamId,
+      'New Member Joined',
+      `${params.name} joined the group.`
+    );
+
     return user;
   },
 
@@ -368,12 +382,28 @@ export const authService = {
   },
 
   uploadProfileImage: async (userId: string, imageUri: string): Promise<string> => {
-    const response = await fetch(imageUri);
-    const blob = await response.blob();
+    const blob: Blob = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = function () {
+        resolve(xhr.response);
+      };
+      xhr.onerror = function (e) {
+        reject(new TypeError("Network request failed"));
+      };
+      xhr.responseType = "blob";
+      xhr.open("GET", imageUri, true);
+      xhr.send(null);
+    });
+
     const storageRef = ref(storage, `profiles/${userId}.jpg`);
     await uploadBytes(storageRef, blob);
+    if (typeof (blob as any).close === 'function') {
+      (blob as any).close();
+    }
     const url = await getDownloadURL(storageRef);
-    await updateDoc(doc(db, 'users', userId), { profileImageUrl: url });
+    if (!userId.startsWith('group_')) {
+      await updateDoc(doc(db, 'users', userId), { profileImageUrl: url });
+    }
     return url;
   },
 

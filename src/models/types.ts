@@ -11,6 +11,7 @@ export interface AppUser {
   teamId: string;
   walletBalance: number;
   profileImageUrl?: string;
+  monthlyTarget?: number;
   currency: string;
   createdAt: Date;
   deactivated?: boolean;

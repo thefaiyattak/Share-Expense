@@ -11,7 +11,9 @@ import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
-  Dimensions
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStore } from '../../store/useStore';
@@ -517,10 +519,12 @@ export default function DashboardTab() {
           </View>
         )}
 
-        {/* Progress Card */}
+        {/* Progress Card (Only shown if monthlyTarget is set) */}
         {(() => {
-          const budgetLimit = 30000;
-          const spendingPercentage = budgetLimit > 0 ? Math.min(Math.round((totalSpending / budgetLimit) * 100), 100) : 0;
+          const targetLimit = currentAppUser?.monthlyTarget || 0;
+          if (!targetLimit || targetLimit <= 0) return null;
+
+          const spendingPercentage = Math.min(Math.round((totalSpending / targetLimit) * 100), 100);
           const radius = 24;
           const circumference = 2 * Math.PI * radius;
           const strokeDashoffset = circumference - (spendingPercentage / 100) * circumference;
@@ -530,7 +534,7 @@ export default function DashboardTab() {
               <View>
                 <Text style={styles.progressLabel}>Total spending</Text>
                 <Text style={styles.progressValue}>{formatAmount(totalSpending)}</Text>
-                <Text style={styles.progressPeriod}>This month (Target: {formatAmount(budgetLimit)})</Text>
+                <Text style={styles.progressPeriod}>This month (Target: {formatAmount(targetLimit)})</Text>
               </View>
               <View style={styles.progressCircleContainer}>
                 <Svg height="64" width="64" viewBox="0 0 64 64">
@@ -710,7 +714,10 @@ export default function DashboardTab() {
         visible={walletModalVisible}
         onRequestClose={() => setWalletModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Add money to wallet</Text>
             <Text style={styles.modalSubtitle}>Type the amount you want to add to your personal wallet deposit.</Text>
@@ -738,45 +745,49 @@ export default function DashboardTab() {
               <Text style={styles.modalCancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
-      {/* Notifications Modal */}
+      {/* Notifications Modal (Full Page View) */}
       <Modal
         animationType="slide"
-        transparent={true}
+        transparent={false}
         visible={notificationsModalVisible}
         onRequestClose={() => setNotificationsModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: '75%' }]}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Notifications</Text>
-              <TouchableOpacity onPress={() => setNotificationsModalVisible(false)}>
-                <Ionicons name="close" size={24} color={colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }}>
-              {notifications.length === 0 ? (
-                <Text style={{ textAlign: 'center', color: colors.textSecondary, marginTop: 20 }}>No notifications yet.</Text>
-              ) : (
-                notifications.map((notif) => (
-                  <View key={notif.id} style={styles.notificationItem}>
-                    <View style={styles.notifIconBox}>
-                      <Ionicons name={notif.icon as any} size={20} color={colors.primary} />
-                    </View>
-                    <View style={styles.notifDetails}>
-                      <Text style={styles.notifTitle}>{notif.title}</Text>
-                      <Text style={styles.notifDesc}>{notif.desc}</Text>
-                      <Text style={styles.notifTime}>{notif.time}</Text>
-                    </View>
-                  </View>
-                ))
-              )}
-            </ScrollView>
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.appBar}>
+            <TouchableOpacity onPress={() => setNotificationsModalVisible(false)} style={styles.backBtn}>
+              <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <Text style={styles.appBarTitle}>Notifications</Text>
+            <View style={{ width: 24 }} />
           </View>
-        </View>
+
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+            {notifications.length === 0 ? (
+              <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 80 }}>
+                <Ionicons name="notifications-off-outline" size={48} color={colors.textTertiary} />
+                <Text style={{ textAlign: 'center', color: colors.textSecondary, marginTop: 12, fontSize: 15 }}>
+                  No notifications yet.
+                </Text>
+              </View>
+            ) : (
+              notifications.map((notif) => (
+                <View key={notif.id} style={styles.notificationItem}>
+                  <View style={styles.notifIconBox}>
+                    <Ionicons name={notif.icon as any} size={22} color={colors.primary} />
+                  </View>
+                  <View style={styles.notifDetails}>
+                    <Text style={styles.notifTitle}>{notif.title}</Text>
+                    <Text style={styles.notifDesc}>{notif.desc}</Text>
+                    <Text style={styles.notifTime}>{notif.time}</Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </ScrollView>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -786,6 +797,24 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  appBar: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderColor: colors.divider,
+    paddingHorizontal: 16,
+  },
+  appBarTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+  },
+  backBtn: {
+    padding: 4,
   },
   container: {
     padding: 16,
@@ -1094,7 +1123,7 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
     borderRadius: 8,
   },
   globalLoader: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(255,255,255,0.7)',
     alignItems: 'center',
     justifyContent: 'center',

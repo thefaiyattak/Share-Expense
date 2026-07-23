@@ -8,7 +8,9 @@ import {
   ScrollView, 
   ActivityIndicator, 
   Alert,
-  Image
+  Image,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -34,6 +36,7 @@ export default function AddExpenseScreen() {
   const { currentAppUser, darkMode } = useStore();
   const [category, setCategory] = useState<MealCategory>(defaultCategory);
   const [items, setItems] = useState<ItemEntry[]>([{ name: '', qty: '1', price: '' }]);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   const colors = getThemeColors(darkMode);
@@ -63,11 +66,11 @@ export default function AddExpenseScreen() {
           }
         },
         { 
-          text: 'Gallery', 
+          text: 'Photo Gallery', 
           onPress: async () => {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
-              Alert.alert('Permission needed', 'Photos access is required to select receipts.');
+              Alert.alert('Permission needed', 'Media library access is required.');
               return;
             }
             const result = await ImagePicker.launchImageLibraryAsync({
@@ -87,6 +90,16 @@ export default function AddExpenseScreen() {
     const updated = [...items];
     updated[index] = { ...updated[index], [key]: val };
     setItems(updated);
+
+    // Clear inline error when user types
+    const errKey = `${index}_${key}`;
+    if (errors[errKey]) {
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next[errKey];
+        return next;
+      });
+    }
   };
 
   const addItemRow = () => {
@@ -96,20 +109,27 @@ export default function AddExpenseScreen() {
   const removeItemRow = (index: number) => {
     const updated = items.filter((_, i) => i !== index);
     setItems(updated);
+    setErrors({});
   };
 
   const handleSave = async () => {
     if (!currentAppUser) return;
 
+    const newErrors: Record<string, string> = {};
     for (let i = 0; i < items.length; i++) {
       if (!items[i].name.trim()) {
-        Alert.alert('Validation Error', `Enter name for item ${i + 1}`);
-        return;
+        newErrors[`${i}_name`] = 'Item name is required';
       }
-      if (!items[i].price.trim() || isNaN(Number(items[i].price))) {
-        Alert.alert('Validation Error', `Enter valid price for item ${i + 1}`);
-        return;
+      if (!items[i].price.trim()) {
+        newErrors[`${i}_price`] = 'Price is required';
+      } else if (isNaN(Number(items[i].price))) {
+        newErrors[`${i}_price`] = 'Enter valid price';
       }
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
     }
 
     setSaving(true);
@@ -143,32 +163,25 @@ export default function AddExpenseScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.appBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.appBarTitle}>Add expense</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.container}>
-        {/* Category Toggles */}
-        <View style={styles.categoryContainer}>
-          {categoriesList.map((c) => {
-            const isSelected = category === c;
-            return (
-              <TouchableOpacity 
-                key={c} 
-                style={[styles.catBtn, isSelected && styles.catBtnSelected]}
-                onPress={() => setCategory(c)}
-              >
-                <Text style={[styles.catText, isSelected && styles.catTextSelected]}>
-                  {c.charAt(0).toUpperCase() + c.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <View style={styles.appBar}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.appBarTitle}>
+            Add {category.charAt(0).toUpperCase() + category.slice(1)} Expense
+          </Text>
+          <View style={{ width: 24 }} />
         </View>
+
+        <ScrollView 
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+        >
 
         {/* Item Cards */}
         {items.map((item, i) => (
@@ -183,12 +196,17 @@ export default function AddExpenseScreen() {
             </View>
 
             <TextInput 
-              style={styles.input}
+              style={[styles.input, errors[`${i}_name`] ? { borderColor: colors.error, borderWidth: 1.5 } : null]}
               placeholder="Item name"
               placeholderTextColor={colors.textSecondary}
               value={item.name}
               onChangeText={(txt) => updateItem(i, 'name', txt)}
             />
+            {errors[`${i}_name`] && (
+              <Text style={{ color: colors.error, fontSize: 12, marginTop: -8, marginBottom: 8, marginLeft: 4 }}>
+                {errors[`${i}_name`]}
+              </Text>
+            )}
 
             <View style={styles.qtyPriceRow}>
               <TextInput 
@@ -198,14 +216,21 @@ export default function AddExpenseScreen() {
                 value={item.qty}
                 onChangeText={(txt) => updateItem(i, 'qty', txt)}
               />
-              <TextInput 
-                style={[styles.input, { flex: 2 }]}
-                placeholder="Price"
-                placeholderTextColor={colors.textSecondary}
-                value={item.price}
-                onChangeText={(txt) => updateItem(i, 'price', txt)}
-                keyboardType="numeric"
-              />
+              <View style={{ flex: 2 }}>
+                <TextInput 
+                  style={[styles.input, errors[`${i}_price`] ? { borderColor: colors.error, borderWidth: 1.5 } : null]}
+                  placeholder="Price"
+                  placeholderTextColor={colors.textSecondary}
+                  value={item.price}
+                  onChangeText={(txt) => updateItem(i, 'price', txt)}
+                  keyboardType="numeric"
+                />
+                {errors[`${i}_price`] && (
+                  <Text style={{ color: colors.error, fontSize: 12, marginTop: -8, marginBottom: 8, marginLeft: 4 }}>
+                    {errors[`${i}_price`]}
+                  </Text>
+                )}
+              </View>
             </View>
 
             {/* Receipt uploader */}
@@ -244,7 +269,8 @@ export default function AddExpenseScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </KeyboardAvoidingView>
+  </SafeAreaView>
   );
 }
 

@@ -7,16 +7,17 @@ import {
   TouchableOpacity, 
   Alert, 
   Switch, 
-  Clipboard,
   Share,
   Modal,
   Platform,
   TextInput,
   ActivityIndicator,
   Image,
-  RefreshControl
+  RefreshControl,
+  KeyboardAvoidingView
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -62,6 +63,7 @@ export default function SettingsScreen() {
   // Profile editing
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [editName, setEditName] = useState(currentAppUser?.name || '');
+  const [editTarget, setEditTarget] = useState(currentAppUser?.monthlyTarget ? currentAppUser.monthlyTarget.toString() : '');
   const [profileImageUri, setProfileImageUri] = useState(currentAppUser?.profileImageUrl || '');
   const [aboutModalVisible, setAboutModalVisible] = useState(false);
 
@@ -80,6 +82,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     if (currentAppUser) {
       setEditName(currentAppUser.name);
+      setEditTarget(currentAppUser.monthlyTarget ? currentAppUser.monthlyTarget.toString() : '');
       setProfileImageUri(currentAppUser.profileImageUrl || '');
     }
   }, [currentAppUser]);
@@ -119,8 +122,8 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleCopyTeamId = (teamId: string) => {
-    Clipboard.setString(teamId);
+  const handleCopyTeamId = async (teamId: string) => {
+    await Clipboard.setStringAsync(teamId);
     Alert.alert('Copied', 'Invite code copied to clipboard!');
   };
 
@@ -247,12 +250,17 @@ export default function SettingsScreen() {
     if (!currentAppUser) return;
     setLoading(true);
     try {
+      const parsedTarget = editTarget.trim() ? parseFloat(editTarget.trim()) : 0;
+      const targetVal = isNaN(parsedTarget) || parsedTarget <= 0 ? 0 : parsedTarget;
+
       await authService.updateProfile(currentAppUser.id, {
-        name: editName.trim()
+        name: editName.trim(),
+        monthlyTarget: targetVal
       });
       setCurrentAppUser({
         ...currentAppUser,
-        name: editName.trim()
+        name: editName.trim(),
+        monthlyTarget: targetVal
       });
       setProfileModalVisible(false);
       Alert.alert('Success', 'Profile updated!');
@@ -768,7 +776,10 @@ export default function SettingsScreen() {
         visible={profileModalVisible}
         onRequestClose={() => setProfileModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Edit Profile</Text>
 
@@ -797,6 +808,15 @@ export default function SettingsScreen() {
               onChangeText={setEditName}
             />
 
+            <TextInput 
+              style={styles.modalInput}
+              placeholder="Monthly Target Amount (Optional)"
+              placeholderTextColor={colors.textSecondary}
+              value={editTarget}
+              onChangeText={setEditTarget}
+              keyboardType="numeric"
+            />
+
             <TouchableOpacity 
               style={styles.modalSubmitBtn}
               onPress={handleSaveProfileName}
@@ -811,7 +831,7 @@ export default function SettingsScreen() {
               <Text style={styles.modalCancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Admin Group Editor Modal */}
@@ -1155,7 +1175,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     paddingBottom: 40,
   },
   globalLoader: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(255,255,255,0.7)',
     alignItems: 'center',
     justifyContent: 'center',

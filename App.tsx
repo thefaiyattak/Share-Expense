@@ -75,7 +75,9 @@ function TabNavigator() {
 export default function App() {
   const { currentAppUser, setCurrentAppUser, setExpenses, setMembers, setAttendance, setUserTeams, darkMode } = useStore();
   const [initializing, setInitializing] = useState(true);
-  const [showSplash, setShowSplash] = useState(true);
+  const [minSplashDone, setMinSplashDone] = useState(false);
+  const [splashMounted, setSplashMounted] = useState(true);
+  const splashOpacity = React.useRef(new Animated.Value(1)).current;
 
   const [globalAlertVisible, setGlobalAlertVisible] = useState(false);
   const [globalAlertTitle, setGlobalAlertTitle] = useState('');
@@ -103,8 +105,8 @@ export default function App() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setShowSplash(false);
-    }, 1500);
+      setMinSplashDone(true);
+    }, 1200);
 
     return () => clearTimeout(timer);
   }, []);
@@ -147,6 +149,19 @@ export default function App() {
     return unsub;
   }, []);
 
+  // Smoothly fade out splash screen when auth initialization and min duration finish
+  useEffect(() => {
+    if (!initializing && minSplashDone) {
+      Animated.timing(splashOpacity, {
+        toValue: 0,
+        duration: 350,
+        useNativeDriver: true,
+      }).start(() => {
+        setSplashMounted(false);
+      });
+    }
+  }, [initializing, minSplashDone]);
+
   // Real-time Database Listeners when logged in
   useEffect(() => {
     if (!currentAppUser) return;
@@ -174,34 +189,8 @@ export default function App() {
     };
   }, [currentAppUser]);
 
-  if (showSplash || initializing) {
-    return (
-      <View style={[styles.loadingContainer, { backgroundColor: darkMode ? '#121212' : '#FFFFFF' }]}>
-        <View style={{ width: 140, height: 140, backgroundColor: '#FFFFFF', borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 }}>
-          <Image
-            source={require('./assets/icon.png')}
-            style={{
-              width: 120,
-              height: 120,
-              borderRadius: 24,
-              backgroundColor: '#FFFFFF',
-            }}
-          />
-        </View>
-        <Text style={{
-          marginTop: 24,
-          fontSize: 22,
-          fontWeight: 'bold',
-          color: colors.primary,
-        }}>
-          Share Expense
-        </Text>
-      </View>
-    );
-  }
-
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: darkMode ? '#121212' : '#FFFFFF' }}>
       <SafeAreaProvider>
         <StatusBar style={darkMode ? 'light' : 'dark'} />
         <NavigationContainer theme={navigationTheme}>
@@ -217,6 +206,42 @@ export default function App() {
             )}
           </Stack.Navigator>
         </NavigationContainer>
+
+        {/* Animated Splash Screen Overlay (prevents root component unmount flicker) */}
+        {splashMounted && (
+          <Animated.View 
+            style={[
+              styles.loadingContainer, 
+              { 
+                ...StyleSheet.absoluteFill,
+                zIndex: 99999,
+                opacity: splashOpacity,
+                backgroundColor: darkMode ? '#121212' : '#FFFFFF' 
+              }
+            ]}
+            pointerEvents={!initializing && minSplashDone ? 'none' : 'auto'}
+          >
+            <View style={{ width: 140, height: 140, backgroundColor: '#FFFFFF', borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 }}>
+              <Image
+                source={require('./assets/icon.png')}
+                style={{
+                  width: 120,
+                  height: 120,
+                  borderRadius: 24,
+                  backgroundColor: '#FFFFFF',
+                }}
+              />
+            </View>
+            <Text style={{
+              marginTop: 24,
+              fontSize: 22,
+              fontWeight: 'bold',
+              color: colors.primary,
+            }}>
+              Share Expense
+            </Text>
+          </Animated.View>
+        )}
 
         {/* Global Styled Alert Modal (Green background, white text) */}
         <Modal
