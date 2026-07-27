@@ -17,6 +17,16 @@ import { db } from './firebase';
 import { Expense, Attendance, EditHistory, MealCategory } from '../models/types';
 import { notificationService } from './notificationService';
 
+const toLocalDateStr = (val: any): string => {
+  if (!val) return '';
+  const d = typeof val?.toDate === 'function' ? val.toDate() : new Date(val);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export const expenseService = {
   addExpense: async (e: Omit<Expense, 'id'>): Promise<string> => {
     const data = {
@@ -30,7 +40,7 @@ export const expenseService = {
       await notificationService.notify(
         e.teamId,
         'New Expense Added',
-        `${e.userName} added ${e.itemName} (${e.currency || 'Rs.'} ${e.price})`
+        `${e.userName} added ${e.itemName} (${(e as any).currency || 'Rs.'} ${e.price})`
       );
     }
     return docRef.id;
@@ -57,7 +67,7 @@ export const expenseService = {
       await notificationService.notify(
         first.teamId,
         'New Expense Added',
-        `${first.userName} added ${list.length} item(s): ${itemsSummary} (Total: ${first.currency || 'Rs.'} ${totalAmount})`
+        `${first.userName} added ${list.length} item(s): ${itemsSummary} (Total: ${(first as any).currency || 'Rs.'} ${totalAmount})`
       );
     }
   },
@@ -183,7 +193,7 @@ export const expenseService = {
     teamId: string;
     prevMeals?: MealCategory[];
   }): Promise<void> => {
-    const dateStr = params.date.toISOString().substring(0, 10);
+    const dateStr = toLocalDateStr(params.date);
     const docId = `${params.userId}_${dateStr}`;
 
     const attendanceData = {
@@ -281,10 +291,10 @@ export const expenseService = {
       const price = (Number(exp.price) || 0) * (Number(exp.quantity) || 1);
       let payers: string[] = [];
 
-      const expDateStr = exp.date.toISOString().substring(0, 10);
+      const expDateStr = toLocalDateStr(exp.date);
       const dayAttendance = params.attendance.filter(a => {
         try {
-          const aDateStr = a.date.toISOString().substring(0, 10);
+          const aDateStr = toLocalDateStr(a.date);
           return aDateStr === expDateStr;
         } catch {
           return false;

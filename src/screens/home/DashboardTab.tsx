@@ -21,9 +21,30 @@ import { getThemeColors } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { authService } from '../../services/authService';
+import { expenseService } from '../../services/expenseService';
 import { db } from '../../services/firebase';
 import { doc, updateDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import Svg, { Circle } from 'react-native-svg';
+
+const toDateSafe = (val: any): Date | null => {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val?.toDate === 'function') {
+    const d = val.toDate();
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const toLocalDateStr = (val: any): string => {
+  const d = toDateSafe(val);
+  if (!d) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 export default function DashboardTab() {
   const navigation = useNavigation<any>();
@@ -106,16 +127,20 @@ export default function DashboardTab() {
       const notifs = snap.docs.map(doc => {
         const data = doc.data();
         let timeLabel = 'Just now';
+        let createdAtMs = 0;
         if (data.createdAt) {
-          const created = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
-          const diffMs = Date.now() - created.getTime();
-          const diffMins = Math.floor(diffMs / 60000);
-          if (diffMins < 1) timeLabel = 'Just now';
-          else if (diffMins < 60) timeLabel = `${diffMins}m ago`;
-          else {
-            const diffHours = Math.floor(diffMins / 60);
-            if (diffHours < 24) timeLabel = `${diffHours}h ago`;
-            else timeLabel = `${Math.floor(diffHours / 24)}d ago`;
+          const created = toDateSafe(data.createdAt);
+          if (created) {
+            createdAtMs = created.getTime();
+            const diffMs = Date.now() - created.getTime();
+            const diffMins = Math.floor(diffMs / 60000);
+            if (diffMins < 1) timeLabel = 'Just now';
+            else if (diffMins < 60) timeLabel = `${diffMins}m ago`;
+            else {
+              const diffHours = Math.floor(diffMins / 60);
+              if (diffHours < 24) timeLabel = `${diffHours}h ago`;
+              else timeLabel = `${Math.floor(diffHours / 24)}d ago`;
+            }
           }
         }
         return {
@@ -123,12 +148,13 @@ export default function DashboardTab() {
           title: data.title || 'Notification',
           desc: data.desc || '',
           time: timeLabel,
+          createdAtMs,
           icon: data.title === 'Account Deletion' ? 'warning-outline' : 
                 data.title === 'Account Restored' ? 'checkmark-circle-outline' : 'notifications-outline'
         };
       });
-      // Sort newest first
-      notifs.sort((a, b) => b.id.localeCompare(a.id));
+      // Sort newest first by timestamp
+      notifs.sort((a, b) => b.createdAtMs - a.createdAtMs);
       setNotifications(notifs);
     });
   }, [currentAppUser]);
@@ -140,7 +166,7 @@ export default function DashboardTab() {
       return;
     }
 
-    const unsub = require('../../services/expenseService').expenseService.getMonthAttendance(
+    const unsub = expenseService.getMonthAttendance(
       currentAppUser.teamId,
       selectedDate,
       (data: any) => {
@@ -263,7 +289,8 @@ export default function DashboardTab() {
 
   // Calculations for current month total spending
   const currentMonthExpenses = expenses.filter(e => {
-    const d = new Date(e.date);
+    const d = toDateSafe(e.date);
+    if (!d) return false;
     const now = new Date();
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
@@ -276,7 +303,7 @@ export default function DashboardTab() {
 
   // Re-calculate user share and wallet balance
   const memberIds = members.map(m => m.id);
-  const shares = memberIds.length > 0 ? require('../../services/expenseService').expenseService.calculateShares({
+  const shares = memberIds.length > 0 ? expenseService.calculateShares({
     expenses: currentMonthExpenses,
     attendance: attendance, 
     allIds: memberIds
@@ -288,14 +315,9 @@ export default function DashboardTab() {
   const totalWallet = members.reduce((sum, m) => sum + (m.walletBalance || 0), 0);
 
   // Selected date attendance states
-  const selectedDateStr = selectedDate.toISOString().substring(0, 10);
+  const selectedDateStr = toLocalDateStr(selectedDate);
   const myAttendance = attendance.find(a => {
-    try {
-      const aDateStr = new Date(a.date).toISOString().substring(0, 10);
-      return a.userId === currentAppUser?.id && aDateStr === selectedDateStr;
-    } catch {
-      return false;
-    }
+    return a.userId === currentAppUser?.id && toLocalDateStr(a.date) === selectedDateStr;
   });
 
   const attendedBreakfast = myAttendance ? myAttendance.attendedBreakfast : false;
@@ -323,7 +345,7 @@ export default function DashboardTab() {
     const isPresent = newMeals.length > 0;
     
     try {
-      await require('../../services/expenseService').expenseService.markAttendance({
+      await expenseService.markAttendance({
         userId: currentAppUser.id,
         userName: currentAppUser.name,
         date: selectedDate,
@@ -442,12 +464,9 @@ export default function DashboardTab() {
 
   // Grouped category expenses for today/selectedDate
   const getCategoryTotal = (cat: string) => {
+    const targetStr = toLocalDateStr(selectedDate);
     const dayExpenses = expenses.filter(e => {
-      const d = new Date(e.date);
-      return d.getDate() === selectedDate.getDate() && 
-             d.getMonth() === selectedDate.getMonth() &&
-             d.getFullYear() === selectedDate.getFullYear() &&
-             e.category === cat;
+      return toLocalDateStr(e.date) === targetStr && e.category === cat;
     });
     return dayExpenses.reduce((sum, e) => {
       const price = Number(e.price) || 0;

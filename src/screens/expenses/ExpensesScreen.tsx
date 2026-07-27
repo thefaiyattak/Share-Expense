@@ -18,13 +18,14 @@ import { useStore } from '../../store/useStore';
 import { getThemeColors } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { authService } from '../../services/authService';
+import { expenseService } from '../../services/expenseService';
 import { pdfService } from '../../services/pdfService';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { G, Circle } from 'react-native-svg';
 
 export default function ExpensesScreen() {
   const navigation = useNavigation<any>();
-  const { currentAppUser, currency, members, expenses, activeTeamId, darkMode } = useStore();
+  const { currentAppUser, currency, members, expenses, attendance, activeTeamId, darkMode } = useStore();
   const [modalVisible, setModalVisible] = useState(false);
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberEmail, setNewMemberEmail] = useState('');
@@ -42,14 +43,14 @@ export default function ExpensesScreen() {
   const isAdmin = currentAppUser?.role === 'admin';
 
   // Dynamic calculations
-  const totalWallet = members.reduce((sum, m) => sum + m.walletBalance, 0);
+  const totalWallet = members.reduce((sum, m) => sum + (m.walletBalance || 0), 0);
   
   // Calculate total spent by each user
   const memberSpentMap: Record<string, number> = {};
   members.forEach(m => {
     memberSpentMap[m.id] = expenses
       .filter(e => e.userId === m.id)
-      .reduce((sum, e) => sum + e.price, 0);
+      .reduce((sum, e) => sum + (Number(e.price) || 0) * (Number(e.quantity) || 1), 0);
   });
 
   const totalSpent = Object.values(memberSpentMap).reduce((sum, val) => sum + val, 0);
@@ -57,9 +58,9 @@ export default function ExpensesScreen() {
 
   // Calculate dynamic split shares
   const memberIds = members.map(m => m.id);
-  const shares = memberIds.length > 0 ? require('../../services/expenseService').expenseService.calculateShares({
+  const shares = memberIds.length > 0 ? expenseService.calculateShares({
     expenses: expenses,
-    attendance: [], // simple fallback
+    attendance: attendance,
     allIds: memberIds
   }) : {};
 

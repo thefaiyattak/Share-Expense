@@ -9,6 +9,7 @@ export interface AppUser {
   phone: string;
   role: UserRole;
   teamId: string;
+  teamName?: string;
   walletBalance: number;
   profileImageUrl?: string;
   monthlyTarget?: number;
@@ -37,7 +38,7 @@ export interface Expense {
   category: MealCategory;
   date: Date;
   teamId: string;
-  receiptImageUrl?: string;
+  receiptImageUrl?: string | null;
   isEdited: boolean;
   lastEditedBy?: string;
   lastEditedAt?: Date;
