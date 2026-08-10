@@ -10,12 +10,15 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Keyboard
 } from 'react-native';
+import { GlobalLoader } from '../../components/GlobalLoader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useStore } from '../../store/useStore';
 import { expenseService } from '../../services/expenseService';
+import { authService } from '../../services/authService';
 import { getThemeColors } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -33,9 +36,21 @@ export default function AddExpenseScreen() {
   const route = useRoute<any>();
   const defaultCategory = route.params?.defaultCategory || 'breakfast';
 
-  const { currentAppUser, darkMode } = useStore();
+  const { currentAppUser, darkMode, members } = useStore();
   const [category, setCategory] = useState<MealCategory>(defaultCategory);
+
+  const [expenseDate, setExpenseDate] = useState<Date>(() => {
+    if (route.params?.selectedDate) {
+      const parsed = new Date(route.params.selectedDate);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+    return new Date();
+  });
+
   const [items, setItems] = useState<ItemEntry[]>([{ name: '', qty: '1', price: '' }]);
+  const [selectedSplitUserIds, setSelectedSplitUserIds] = useState<string[]>(() => 
+    members.length > 0 ? members.map(m => m.id) : (currentAppUser ? [currentAppUser.id] : [])
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -57,7 +72,7 @@ export default function AddExpenseScreen() {
               return;
             }
             const result = await ImagePicker.launchCameraAsync({
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              mediaTypes: ['images'],
               quality: 0.8,
             });
             if (!result.canceled && result.assets?.[0]?.uri) {
@@ -74,7 +89,7 @@ export default function AddExpenseScreen() {
               return;
             }
             const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              mediaTypes: ['images'],
               quality: 0.8,
             });
             if (!result.canceled && result.assets?.[0]?.uri) {
@@ -112,6 +127,27 @@ export default function AddExpenseScreen() {
     setErrors({});
   };
 
+  const toggleSplitUser = (id: string) => {
+    if (selectedSplitUserIds.includes(id)) {
+      if (selectedSplitUserIds.length === 1) {
+        Alert.alert('Validation Error', 'At least one member must be selected for the expense split.');
+        return;
+      }
+      setSelectedSplitUserIds(prev => prev.filter(mId => mId !== id));
+    } else {
+      setSelectedSplitUserIds(prev => [...prev, id]);
+    }
+  };
+
+  const toggleAllMembers = () => {
+    if (selectedSplitUserIds.length === members.length) {
+      const defaultUser = currentAppUser ? [currentAppUser.id] : (members[0] ? [members[0].id] : []);
+      setSelectedSplitUserIds(defaultUser);
+    } else {
+      setSelectedSplitUserIds(members.map(m => m.id));
+    }
+  };
+
   const handleSave = async () => {
     if (!currentAppUser) return;
 
@@ -134,18 +170,30 @@ export default function AddExpenseScreen() {
 
     setSaving(true);
     try {
-      const expensesList = items.map((item) => ({
-        userId: currentAppUser.id,
-        userName: currentAppUser.name,
-        itemName: item.name.trim(),
-        quantity: item.qty.trim() || '1',
-        price: parseFloat(item.price) || 0,
-        category,
-        date: new Date(),
-        teamId: currentAppUser.teamId || `personal_${currentAppUser.id.split('_')[0]}`,
-        receiptImageUrl: item.receiptUri || null,
-        isEdited: false,
-        createdAt: new Date(),
+      const expensesList = await Promise.all(items.map(async (item) => {
+        let receiptUrl = item.receiptUri || null;
+        if (item.receiptUri && (item.receiptUri.startsWith('file://') || item.receiptUri.startsWith('content://'))) {
+          try {
+            receiptUrl = await authService.uploadReceiptImage(item.receiptUri);
+          } catch (e) {
+            console.log('Receipt upload fallback to local URI:', e);
+          }
+        }
+
+        return {
+          userId: currentAppUser.id,
+          userName: currentAppUser.name,
+          itemName: item.name.trim(),
+          quantity: item.qty.trim() || '1',
+          price: parseFloat(item.price) || 0,
+          category,
+          date: expenseDate,
+          teamId: currentAppUser.teamId || `personal_${currentAppUser.id.split('_')[0]}`,
+          receiptImageUrl: receiptUrl,
+          splitUserIds: selectedSplitUserIds,
+          isEdited: false,
+          createdAt: new Date(),
+        };
       }));
 
       await expenseService.addExpenses(expensesList);
@@ -163,6 +211,7 @@ export default function AddExpenseScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <GlobalLoader message="Saving expense..." visible={saving} />
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -182,6 +231,15 @@ export default function AddExpenseScreen() {
           contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Assigned Date Badge */}
+          <View style={styles.dateBanner}>
+            <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+            <Text style={styles.dateBannerText}>
+              Target Date: <Text style={{ fontWeight: '700', color: colors.primary }}>
+                {expenseDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+              </Text>
+            </Text>
+          </View>
 
         {/* Item Cards */}
         {items.map((item, i) => (
@@ -255,6 +313,61 @@ export default function AddExpenseScreen() {
           <Ionicons name="add" size={20} color={colors.primary} />
           <Text style={styles.addItemRowText}>Add item</Text>
         </TouchableOpacity>
+
+        {/* Member Selection for Expense Split */}
+        {members.length > 0 && (
+          <View style={styles.splitSectionCard}>
+            <View style={styles.splitSectionHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="people-outline" size={18} color={colors.primary} style={{ marginRight: 6 }} />
+                <Text style={styles.splitSectionTitle}>Split Expense Among</Text>
+              </View>
+              <TouchableOpacity onPress={toggleAllMembers} style={styles.selectAllBtn}>
+                <Text style={styles.selectAllText}>
+                  {selectedSplitUserIds.length === members.length ? 'Clear' : 'Select All'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.splitSectionSub}>
+              Selected members ({selectedSplitUserIds.length}/{members.length}) will share this expense cost equally.
+            </Text>
+
+            <View style={styles.membersGrid}>
+              {members.map((m) => {
+                const isSelected = selectedSplitUserIds.includes(m.id);
+                const initials = m.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[
+                      styles.memberChip,
+                      isSelected && { backgroundColor: colors.primary + '18', borderColor: colors.primary }
+                    ]}
+                    onPress={() => toggleSplitUser(m.id)}
+                  >
+                    <View style={[
+                      styles.chipAvatar,
+                      isSelected ? { backgroundColor: colors.primary } : { backgroundColor: colors.divider }
+                    ]}>
+                      <Text style={[styles.chipAvatarText, isSelected && { color: '#FFFFFF' }]}>
+                        {initials}
+                      </Text>
+                    </View>
+                    <Text style={[styles.chipName, isSelected && { fontWeight: 'bold', color: colors.primary }]} numberOfLines={1}>
+                      {m.name}
+                    </Text>
+                    <Ionicons 
+                      name={isSelected ? "checkbox" : "square-outline"} 
+                      size={18} 
+                      color={isSelected ? colors.primary : colors.textTertiary} 
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         {/* Save Button */}
         <TouchableOpacity 
@@ -388,27 +501,107 @@ const getStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1.5,
     borderColor: colors.primary,
-    borderRadius: 14,
-    paddingVertical: 14,
-    marginVertical: 12,
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginVertical: 10,
   },
   addItemRowText: {
     color: colors.primary,
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: 13,
     marginLeft: 6,
   },
   saveBtn: {
     backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 10,
+    paddingVertical: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 12,
+    marginTop: 10,
   },
   saveBtnText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
+  },
+  splitSectionCard: {
+    backgroundColor: colors.cardBg,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 12,
+  },
+  splitSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  splitSectionTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+  },
+  selectAllBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  selectAllText: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  splitSectionSub: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  membersGrid: {
+    gap: 8,
+  },
+  memberChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.inputBg,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  chipAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  chipAvatarText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+  },
+  chipName: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textPrimary,
+  },
+  dateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.cardBg,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+  },
+  dateBannerText: {
+    fontSize: 13,
+    color: colors.textSecondary,
   },
 });

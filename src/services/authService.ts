@@ -3,13 +3,33 @@ import {
   createUserWithEmailAndPassword, 
   signOut as fbSignOut, 
   sendPasswordResetEmail as fbResetEmail,
+  sendEmailVerification,
   updatePassword,
   reauthenticateWithCredential,
   EmailAuthProvider,
-  updateEmail,
+  verifyBeforeUpdateEmail,
   GoogleAuthProvider,
   signInWithCredential
 } from 'firebase/auth';
+
+// Translate Firebase auth error codes to friendly messages
+const friendlyAuthError = (e: any): string => {
+  const code = e?.code || '';
+  const map: Record<string, string> = {
+    'auth/wrong-password': 'The password you entered is incorrect.',
+    'auth/invalid-credential': 'The email or password is incorrect.',
+    'auth/user-not-found': 'No account found with this email address.',
+    'auth/email-already-in-use': 'This email is already registered.',
+    'auth/weak-password': 'Password must be at least 6 characters.',
+    'auth/invalid-email': 'Please enter a valid email address.',
+    'auth/too-many-requests': 'Too many failed attempts. Please wait a moment and try again.',
+    'auth/requires-recent-login': 'For security, please sign out and sign back in before changing your password.',
+    'auth/network-request-failed': 'Network error. Please check your internet connection.',
+    'auth/user-disabled': 'This account has been disabled. Contact support.',
+    'auth/operation-not-allowed': 'This sign-in method is not enabled. Please contact support.',
+  };
+  return map[code] || e?.message || 'An unexpected error occurred.';
+};
 import { 
   doc, 
   setDoc, 
@@ -27,8 +47,11 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from './firebase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppUser, Team, UserRole } from '../models/types';
 import { notificationService } from './notificationService';
+
+const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
 
 export const authService = {
   // Get Auth State Changes Callback
@@ -79,14 +102,16 @@ export const authService = {
         role: 'user',
         teamId: '',
         walletBalance: 0.0,
-        currency: 'Rs.',
+        currency: 'PKR',
         createdAt: new Date()
       };
       await setDoc(doc(db, 'users', uid), newUser);
+      try {
+        await appStorage.setItem(`@last_active_user_doc_id_${email}`, uid);
+      } catch (_) {}
       return { user: newUser, isNew: true };
     } else {
-      const d = snap.docs[0];
-      const appUser = { id: d.id, ...d.data() } as unknown as AppUser;
+      const appUser = await authService.getAppUser(uid);
       return { user: appUser, isNew: false };
     }
   },
@@ -126,6 +151,9 @@ export const authService = {
     await updateDoc(doc(db, 'teams', teamId), {
       memberIds: arrayUnion(userDocId)
     });
+    try {
+      await appStorage.setItem(`@last_active_user_doc_id_${email}`, userDocId);
+    } catch (_) {}
 
     await notificationService.notify(
       teamId,
@@ -171,10 +199,14 @@ export const authService = {
       teamId: teamId,
       walletBalance: 0.0,
       currency: 'Rs.',
+      hasPasswordSet: true,
       createdAt: new Date()
     };
 
     await setDoc(doc(db, 'users', userDocId), user);
+    try {
+      await appStorage.setItem(`@last_active_user_doc_id_${params.email}`, userDocId);
+    } catch (_) {}
     return user;
   },
 
@@ -203,7 +235,8 @@ export const authService = {
       role: 'user',
       teamId: params.teamId,
       walletBalance: 0.0,
-      currency: 'Rs.',
+      currency: 'PKR',
+      hasPasswordSet: true,
       createdAt: new Date()
     };
 
@@ -211,6 +244,9 @@ export const authService = {
     await updateDoc(doc(db, 'teams', params.teamId), {
       memberIds: arrayUnion(userDocId)
     });
+    try {
+      await appStorage.setItem(`@last_active_user_doc_id_${params.email}`, userDocId);
+    } catch (_) {}
 
     await notificationService.notify(
       params.teamId,
@@ -226,17 +262,34 @@ export const authService = {
   changePassword: async (current: string, newPass: string) => {
     const user = auth.currentUser;
     if (!user || !user.email) throw new Error('Not signed in');
-    const credential = EmailAuthProvider.credential(user.email, current);
-    await reauthenticateWithCredential(user, credential);
-    await updatePassword(user, newPass);
+    try {
+      const credential = EmailAuthProvider.credential(user.email, current);
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPass);
+    } catch (e: any) {
+      throw new Error(friendlyAuthError(e));
+    }
   },
 
   verifyAndChangeEmail: async (newEmail: string, password: string) => {
     const user = auth.currentUser;
     if (!user || !user.email) throw new Error('Not signed in');
-    const credential = EmailAuthProvider.credential(user.email, password);
-    await reauthenticateWithCredential(user, credential);
-    await updateEmail(user, newEmail);
+    try {
+      const credential = EmailAuthProvider.credential(user.email, password);
+      await reauthenticateWithCredential(user, credential);
+      await verifyBeforeUpdateEmail(user, newEmail);
+    } catch (e: any) {
+      throw new Error(friendlyAuthError(e));
+    }
+  },
+
+  signInWithEmail: async (email: string, password: string): Promise<AppUser | null> => {
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      return await authService.getAppUser(cred.user.uid);
+    } catch (e: any) {
+      throw new Error(friendlyAuthError(e));
+    }
   },
 
   getAppUser: async (uid: string): Promise<AppUser | null> => {
@@ -245,11 +298,31 @@ export const authService = {
     const q = query(collection(db, 'users'), where('email', '==', email));
     const snap = await getDocs(q);
     if (snap.empty) return null;
-    const withTeam = snap.docs.find(d => {
-      const data = d.data();
-      return data && data.teamId;
-    });
-    const d = withTeam || snap.docs[0];
+
+    let savedDocId: string | null = null;
+    try {
+      savedDocId = await appStorage.getItem(`@last_active_user_doc_id_${email}`);
+    } catch (_) {}
+
+    let d = snap.docs[0];
+    if (savedDocId) {
+      const match = snap.docs.find(docItem => docItem.id === savedDocId);
+      if (match) {
+        d = match;
+      } else {
+        const withTeam = snap.docs.find(docItem => {
+          const data = docItem.data();
+          return data && data.teamId;
+        });
+        d = withTeam || snap.docs[0];
+      }
+    } else {
+      const withTeam = snap.docs.find(docItem => {
+        const data = docItem.data();
+        return data && data.teamId;
+      });
+      d = withTeam || snap.docs[0];
+    }
     const userDocRef = doc(db, 'users', d.id);
     const data = d.data();
 
@@ -283,19 +356,20 @@ export const authService = {
   getUserTeams: async (email: string): Promise<any[]> => {
     const q = query(collection(db, 'users'), where('email', '==', email));
     const snap = await getDocs(q);
-    const teams: any[] = [];
-    for (const uDoc of snap.docs) {
+    const teamPromises = snap.docs.map(async (uDoc) => {
       const u = uDoc.data() as AppUser;
-      if (!u.teamId) continue;
+      if (!u.teamId) return null;
       const tSnap = await getDoc(doc(db, 'teams', u.teamId));
-      teams.push({
+      return {
         teamId: u.teamId,
         teamName: tSnap.exists() ? (tSnap.data()?.name || 'Unknown') : 'Unknown',
+        groupImageUrl: tSnap.exists() ? (tSnap.data()?.groupImageUrl || '') : '',
         role: u.role === 'admin' ? 'Admin' : 'Member',
         userDocId: uDoc.id
-      });
-    }
-    return teams;
+      };
+    });
+    const results = await Promise.all(teamPromises);
+    return results.filter(Boolean) as any[];
   },
 
   createTeam: async (teamName: string): Promise<string> => {
@@ -328,6 +402,9 @@ export const authService = {
       currency: 'Rs.',
       createdAt: new Date()
     });
+    try {
+      await appStorage.setItem(`@last_active_user_doc_id_${email}`, `${uid}_${teamId}`);
+    } catch (_) {}
 
     return teamId;
   },
@@ -382,29 +459,87 @@ export const authService = {
   },
 
   uploadProfileImage: async (userId: string, imageUri: string): Promise<string> => {
-    const blob: Blob = await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.onload = function () {
-        resolve(xhr.response);
-      };
-      xhr.onerror = function (e) {
-        reject(new TypeError("Network request failed"));
-      };
-      xhr.responseType = "blob";
-      xhr.open("GET", imageUri, true);
-      xhr.send(null);
-    });
+    try {
+      const cleanId = userId.startsWith('group_') ? userId.replace('group_', '') : userId;
+      const path = userId.startsWith('group_') ? `groups/${cleanId}_${Date.now()}.jpg` : `profiles/${userId}_${Date.now()}.jpg`;
+      const storageRef = ref(storage, path);
 
-    const storageRef = ref(storage, `profiles/${userId}.jpg`);
-    await uploadBytes(storageRef, blob);
-    if (typeof (blob as any).close === 'function') {
-      (blob as any).close();
+      let blob: Blob;
+      try {
+        const response = await fetch(imageUri);
+        blob = await response.blob();
+      } catch {
+        blob = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.onload = function () { resolve(xhr.response); };
+          xhr.onerror = function (e) { reject(e); };
+          xhr.responseType = "blob";
+          xhr.open("GET", imageUri, true);
+          xhr.send(null);
+        });
+      }
+
+      if (blob) {
+        await uploadBytes(storageRef, blob);
+        const url = await getDownloadURL(storageRef);
+        if (userId.startsWith('group_')) {
+          await updateDoc(doc(db, 'teams', cleanId), { groupImageUrl: url });
+        } else {
+          await updateDoc(doc(db, 'users', userId), { profileImageUrl: url });
+        }
+        return url;
+      }
+      throw new Error('Blob creation failed');
+    } catch (err: any) {
+      console.log('Firebase Storage upload fallback:', err?.message || err);
+      // Fallback: Save local image URI directly so profile & group image updates seamlessly
+      const cleanId = userId.startsWith('group_') ? userId.replace('group_', '') : userId;
+      if (userId.startsWith('group_')) {
+        await updateDoc(doc(db, 'teams', cleanId), { groupImageUrl: imageUri });
+      } else {
+        await updateDoc(doc(db, 'users', userId), { profileImageUrl: imageUri });
+      }
+      return imageUri;
     }
-    const url = await getDownloadURL(storageRef);
-    if (!userId.startsWith('group_')) {
-      await updateDoc(doc(db, 'users', userId), { profileImageUrl: url });
+  },
+
+  uploadReceiptImage: async (imageUri: string): Promise<string> => {
+    try {
+      const filename = `receipts/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
+      const storageRef = ref(storage, filename);
+
+      const uploadPromise = (async () => {
+        let blob: Blob;
+        try {
+          const response = await fetch(imageUri);
+          blob = await response.blob();
+        } catch {
+          blob = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.onload = function () { resolve(xhr.response); };
+            xhr.onerror = function (e) { reject(e); };
+            xhr.responseType = 'blob';
+            xhr.open('GET', imageUri, true);
+            xhr.send(null);
+          });
+        }
+
+        if (blob!) {
+          await uploadBytes(storageRef, blob!);
+          return await getDownloadURL(storageRef);
+        }
+        return imageUri;
+      })();
+
+      const timeoutPromise = new Promise<string>((_, reject) => 
+        setTimeout(() => reject(new Error('Upload timeout')), 2500)
+      );
+
+      return await Promise.race([uploadPromise, timeoutPromise]);
+    } catch (err) {
+      console.log('Receipt upload fallback to local URI:', err);
+      return imageUri;
     }
-    return url;
   },
 
   updateProfile: async (userId: string, data: Partial<AppUser>) => {
@@ -414,7 +549,51 @@ export const authService = {
   switchActiveTeam: async (userDocId: string): Promise<AppUser> => {
     const snap = await getDoc(doc(db, 'users', userDocId));
     if (!snap.exists()) throw new Error('User record not found.');
-    return { id: snap.id, ...snap.data() } as unknown as AppUser;
+    const data = snap.data();
+    if (data && data.email) {
+      try {
+        await appStorage.setItem(`@last_active_user_doc_id_${data.email}`, userDocId);
+      } catch (_) {}
+    }
+    return { id: snap.id, ...data } as unknown as AppUser;
+  },
+
+  switchToPersonalWorkspace: async (uid: string, email: string, name: string): Promise<AppUser> => {
+    // Try to find a personal user doc (where teamId is empty or id matches uid)
+    const q = query(collection(db, 'users'), where('email', '==', email));
+    const snap = await getDocs(q);
+    const personalDoc = snap.docs.find(d => !d.data()?.teamId);
+
+    let userObj: AppUser;
+
+    if (personalDoc) {
+      userObj = { id: personalDoc.id, ...personalDoc.data() } as unknown as AppUser;
+    } else {
+      const personalDocRef = doc(db, 'users', uid);
+      const personalSnap = await getDoc(personalDocRef);
+      if (personalSnap.exists()) {
+        userObj = { id: personalSnap.id, ...personalSnap.data() } as unknown as AppUser;
+      } else {
+        userObj = {
+          id: uid,
+          name: name || email.split('@')[0],
+          email: email,
+          phone: '',
+          role: 'user',
+          teamId: '',
+          walletBalance: 0.0,
+          currency: 'PKR',
+          createdAt: new Date()
+        };
+        await setDoc(personalDocRef, userObj);
+      }
+    }
+
+    try {
+      await appStorage.setItem(`@last_active_user_doc_id_${email}`, userObj.id);
+    } catch (_) {}
+
+    return userObj;
   },
 
   deactivateAccount: async (userId: string) => {
@@ -448,5 +627,49 @@ export const authService = {
     await fbSignOut(auth);
   },
 
-  signOut: () => fbSignOut(auth)
+  signOut: async () => {
+    try {
+      const gsignin = require('@react-native-google-signin/google-signin');
+      if (gsignin && gsignin.GoogleSignin) {
+        await gsignin.GoogleSignin.signOut();
+      }
+    } catch (_) {}
+    return fbSignOut(auth);
+  },
+
+  sendPasswordReset: async (email: string) => {
+    try {
+      await fbResetEmail(auth, email);
+    } catch (e: any) {
+      throw new Error(friendlyAuthError(e));
+    }
+  },
+
+  changeUserPassword: async (currentPass: string, newPass: string, userId: string) => {
+    const user = auth.currentUser;
+    if (!user || !user.email) throw new Error('No active user logged in.');
+    try {
+      const credential = EmailAuthProvider.credential(user.email, currentPass);
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPass);
+      await updateDoc(doc(db, 'users', userId), { hasPasswordSet: true });
+      // Send verification email so user confirms the change
+      try { await sendEmailVerification(user); } catch (_) {}
+    } catch (e: any) {
+      throw new Error(friendlyAuthError(e));
+    }
+  },
+
+  setUserPassword: async (newPass: string, userId: string) => {
+    const user = auth.currentUser;
+    if (!user || !user.email) throw new Error('No active user logged in.');
+    try {
+      await updatePassword(user, newPass);
+      await updateDoc(doc(db, 'users', userId), { hasPasswordSet: true });
+      // Send verification email to confirm password was set
+      try { await sendEmailVerification(user); } catch (_) {}
+    } catch (e: any) {
+      throw new Error(friendlyAuthError(e));
+    }
+  }
 };

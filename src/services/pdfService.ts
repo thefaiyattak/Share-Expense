@@ -14,7 +14,7 @@ export const pdfService = {
     targetUserId?: string;
     skipShare?: boolean;
   }): Promise<string> => {
-    const currency = params.currency || 'Rs.';
+    const currency = params.currency || 'PKR';
     
     // Filter by targetUserId if provided (for individual member report)
     const filteredExpenses = params.targetUserId
@@ -25,7 +25,7 @@ export const pdfService = {
       ? params.users.filter((u) => u.id === params.targetUserId)
       : params.users;
 
-    const total = filteredExpenses.reduce((sum, e) => sum + e.price, 0);
+    const total = filteredExpenses.reduce((sum, e) => sum + ((Number(e.price) || 0) * (parseFloat(e.quantity) || 1)), 0);
 
     const formatter = new Intl.NumberFormat('en-PK', { maximumFractionDigits: 0 });
     const formatAmt = (num: number) => `${currency} ${formatter.format(num)}`;
@@ -35,7 +35,7 @@ export const pdfService = {
     filteredUsers.forEach((u) => {
       const spent = filteredExpenses
         .filter((e) => e.userId === u.id)
-        .reduce((sum, e) => sum + e.price, 0);
+        .reduce((sum, e) => sum + ((Number(e.price) || 0) * (parseFloat(e.quantity) || 1)), 0);
       const balance = u.walletBalance - spent;
       membersRows += `
         <tr>
@@ -50,17 +50,20 @@ export const pdfService = {
     // Build Expenses Table HTML
     let expenseRows = '';
     filteredExpenses.forEach((e) => {
-      const dateStr = new Date(e.date).toLocaleDateString('en-GB', {
+      const expDate = new Date(e.date);
+      const datePart = expDate.toLocaleDateString('en-GB', {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
       });
+      const timePart = expDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      const dateStr = `${datePart} ${timePart}`;
       expenseRows += `
         <tr>
           <td>${dateStr}</td>
           <td>${e.itemName}</td>
           <td>${e.quantity}</td>
-          <td>${formatAmt(e.price)}</td>
+          <td>${formatAmt((Number(e.price) || 0) * (parseFloat(e.quantity) || 1))}</td>
           <td>${e.category.toUpperCase()}</td>
           <td>${e.userName}</td>
         </tr>
@@ -225,7 +228,7 @@ export const pdfService = {
         ` : ''}
 
         <div class="footer">
-          <div>by fyntech</div>
+          <div>Developed by DigitalAppsStudio in collaboration with fyntech</div>
           <div>React Native Edition</div>
         </div>
       </body>
@@ -244,6 +247,8 @@ export const pdfService = {
     currency?: string;
     targetUserId?: string;
     skipShare?: boolean;
+    dateRange?: string;
+    teamName?: string;
   }): Promise<string> => {
     const currency = params.currency || 'Rs.';
     const headers = ['Date', 'Item', 'Qty/Desc', 'Price', 'Category', 'By'];
@@ -253,12 +258,15 @@ export const pdfService = {
       : params.expenses;
 
     const rows = filteredExpenses.map((e) => {
-      const dateStr = e.date ? new Date(e.date).toLocaleDateString('en-GB') : '';
+      const expDate = e.date ? new Date(e.date) : new Date(0);
+      const datePart = expDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const timePart = expDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      const dateStr = `${datePart} ${timePart}`;
       return [
         String(dateStr || ''),
         String(e.itemName || ''),
         String(e.quantity || ''),
-        String(e.price ?? '0'),
+        String((Number(e.price) || 0) * (parseFloat(e.quantity) || 1)),
         String(e.category || ''),
         String(e.userName || ''),
       ];
@@ -313,9 +321,10 @@ export const pdfService = {
           encoding = FileSystem.EncodingType.UTF8;
         }
 
+        const cleanFileName = fileName.replace(/\.(pdf|csv)$/i, '');
         const createdUri = await FileSystem.StorageAccessFramework.createFileAsync(
           permissions.directoryUri,
-          fileName,
+          cleanFileName,
           mimeType
         );
 

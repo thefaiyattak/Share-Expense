@@ -13,10 +13,19 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
+let SplashScreen: any = null;
+try {
+  SplashScreen = require('expo-splash-screen');
+  SplashScreen.preventAutoHideAsync().catch(() => {});
+} catch (e) {}
+
 import { authService } from './src/services/authService';
 import { expenseService } from './src/services/expenseService';
+import { notificationService } from './src/services/notificationService';
 import { useStore } from './src/store/useStore';
 import { getThemeColors } from './src/utils/theme';
+
+import CustomToast from './src/components/CustomToast';
 
 // Import Screens
 import LoginScreen from './src/screens/auth/LoginScreen';
@@ -86,29 +95,56 @@ export default function App() {
 
   useEffect(() => {
     Alert.alert = (title: string, message?: string, buttons?: any[]) => {
+      // If it's a simple notification message with 0 or 1 'OK' button, show custom 3s toast!
+      if (!buttons || buttons.length <= 1) {
+        const typeStr = (title || '').toLowerCase();
+        let type: 'success' | 'error' | 'warning' | 'info' = 'info';
+        if (typeStr.includes('success')) type = 'success';
+        else if (typeStr.includes('error') || typeStr.includes('failed') || typeStr.includes('validation')) type = 'error';
+        else if (typeStr.includes('warning')) type = 'warning';
+
+        const toastMsg = message || title;
+        useStore.getState().showToast(toastMsg, type, title);
+        if (buttons && buttons[0]?.onPress) {
+          buttons[0].onPress();
+        }
+        return;
+      }
+
       setGlobalAlertTitle(title || '');
       setGlobalAlertMessage(message || '');
-      if (buttons && buttons.length > 0) {
-        let sortedButtons = [...buttons];
-        const cancelIndex = sortedButtons.findIndex(b => b.style === 'cancel' || (b.text && b.text.toLowerCase() === 'cancel'));
-        if (cancelIndex > -1) {
-          const [cancelBtn] = sortedButtons.splice(cancelIndex, 1);
-          sortedButtons.push(cancelBtn);
-        }
-        setGlobalAlertButtons(sortedButtons);
-      } else {
-        setGlobalAlertButtons([{ text: 'OK', onPress: () => {} }]);
+      let sortedButtons = [...buttons];
+      const cancelIndex = sortedButtons.findIndex(b => b.style === 'cancel' || (b.text && b.text.toLowerCase() === 'cancel'));
+      if (cancelIndex > -1) {
+        const [cancelBtn] = sortedButtons.splice(cancelIndex, 1);
+        sortedButtons.push(cancelBtn);
       }
+      setGlobalAlertButtons(sortedButtons);
       setGlobalAlertVisible(true);
     };
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setMinSplashDone(true);
-    }, 1200);
+    // Hide native OS splash screen seamlessly once React JS splash view is mounted
+    if (SplashScreen?.hideAsync) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
 
-    return () => clearTimeout(timer);
+    // Minimum splash display duration for smooth transition without flicker
+    const minTimer = setTimeout(() => {
+      setMinSplashDone(true);
+    }, 1500);
+
+    // Hard maximum limit: Splash screen MUST finish within 5 seconds under any condition
+    const maxTimer = setTimeout(() => {
+      setInitializing(false);
+      setMinSplashDone(true);
+    }, 5000);
+
+    return () => {
+      clearTimeout(minTimer);
+      clearTimeout(maxTimer);
+    };
   }, []);
 
   const colors = getThemeColors(darkMode);
@@ -128,30 +164,34 @@ export default function App() {
   // Auth State Listener
   useEffect(() => {
     const unsub = authService.onAuthStateChanged(async (user) => {
-      if (user) {
-        try {
+      try {
+        if (user) {
           const appUser = await authService.getAppUser(user.uid);
           setCurrentAppUser(appUser);
+          if (appUser?.id) {
+            notificationService.registerForPushNotificationsAsync(appUser.id).catch(() => {});
+          }
           if (user.email) {
             const teams = await authService.getUserTeams(user.email);
             setUserTeams(teams);
           }
-        } catch (e) {
+        } else {
           setCurrentAppUser(null);
           setUserTeams([]);
         }
-      } else {
+      } catch (e) {
         setCurrentAppUser(null);
         setUserTeams([]);
+      } finally {
+        setInitializing(false);
       }
-      setInitializing(false);
     });
     return unsub;
   }, []);
 
   // Smoothly fade out splash screen when auth initialization and min duration finish
   useEffect(() => {
-    if (!initializing && minSplashDone) {
+    if ((!initializing && minSplashDone) || (!splashMounted && minSplashDone)) {
       Animated.timing(splashOpacity, {
         toValue: 0,
         duration: 350,
@@ -193,8 +233,29 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: darkMode ? '#121212' : '#FFFFFF' }}>
       <SafeAreaProvider>
         <StatusBar style={darkMode ? 'light' : 'dark'} />
+        <CustomToast />
         <NavigationContainer theme={navigationTheme}>
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Navigator 
+            screenOptions={{ 
+              headerShown: false,
+              cardStyleInterpolator: ({ current, layouts }) => ({
+                cardStyle: {
+                  transform: [
+                    {
+                      translateX: current.progress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [layouts.screen.width, 0],
+                      }),
+                    },
+                  ],
+                  opacity: current.progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.5, 1],
+                  }),
+                },
+              }),
+            }}
+          >
             {currentAppUser ? (
               <>
                 <Stack.Screen name="MainTabs" component={TabNavigator} />
@@ -208,12 +269,12 @@ export default function App() {
         </NavigationContainer>
 
         {/* Animated Splash Screen Overlay (prevents root component unmount flicker) */}
-        {splashMounted && (
+        {(initializing || splashMounted) && (
           <Animated.View 
             style={[
               styles.loadingContainer, 
+              StyleSheet.absoluteFill,
               { 
-                ...StyleSheet.absoluteFill,
                 zIndex: 99999,
                 opacity: splashOpacity,
                 backgroundColor: darkMode ? '#121212' : '#FFFFFF' 
@@ -240,10 +301,19 @@ export default function App() {
             }}>
               Share Expense
             </Text>
+            <Text style={{
+              marginTop: 6,
+              fontSize: 12,
+              fontWeight: '500',
+              color: colors.textSecondary,
+              textAlign: 'center',
+            }}>
+              Developed by DigitalAppsStudio in collaboration with fyntech
+            </Text>
           </Animated.View>
         )}
 
-        {/* Global Styled Alert Modal (Green background, white text) */}
+        {/* Global Modern Alert Modal */}
         <Modal
           animationType="fade"
           transparent={true}
@@ -252,53 +322,88 @@ export default function App() {
         >
           <View style={styles.modalOverlayCentered}>
             <View style={{ 
-              backgroundColor: '#2E7D32', 
-              borderRadius: 16, 
-              padding: 24, 
-              width: '85%', 
+              backgroundColor: colors.surface, 
+              borderRadius: 24, 
+              padding: 22, 
+              width: '82%', 
+              maxWidth: 330,
               alignItems: 'center',
+              borderWidth: 1,
+              borderColor: colors.divider,
               shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.25,
-              shadowRadius: 10,
-              elevation: 5
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.18,
+              shadowRadius: 16,
+              elevation: 8
             }}>
-              <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 12, textAlign: 'center' }}>
+              <View style={{
+                width: 52,
+                height: 52,
+                borderRadius: 16,
+                backgroundColor: colors.primary + '15',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 12,
+                borderWidth: 1,
+                borderColor: colors.primary + '30'
+              }}>
+                <Ionicons name="information-circle" size={28} color={colors.primary} />
+              </View>
+
+              <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginBottom: !!globalAlertMessage ? 6 : 18, textAlign: 'center' }}>
                 {globalAlertTitle}
               </Text>
+
               {!!globalAlertMessage && (
-                <Text style={{ fontSize: 14, color: '#E8F5E9', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 18, marginBottom: 20 }}>
                   {globalAlertMessage}
                 </Text>
               )}
-              <View style={{ width: '100%', gap: 10 }}>
-                {globalAlertButtons.map((btn, index) => (
-                  <TouchableOpacity 
-                    key={index}
-                    style={{ 
-                      backgroundColor: '#FFFFFF', 
-                      paddingHorizontal: 20, 
-                      paddingVertical: 12, 
-                      borderRadius: 10, 
-                      width: '100%', 
-                      alignItems: 'center'
-                    }}
-                    onPress={() => {
-                      setGlobalAlertVisible(false);
-                      if (btn.onPress) {
-                        setTimeout(() => btn.onPress(), 100);
-                      }
-                    }}
-                  >
-                    <Text style={{ 
-                      color: btn.style === 'destructive' ? '#D32F2F' : '#2E7D32', 
-                      fontWeight: 'bold', 
-                      fontSize: 14 
-                    }}>
-                      {btn.text}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+
+              <View style={{ width: '100%', gap: 8 }}>
+                {globalAlertButtons.map((btn, index) => {
+                  const isDestructive = btn.style === 'destructive';
+                  const isCancel = btn.style === 'cancel' || (btn.text && btn.text.toLowerCase() === 'cancel');
+
+                  let btnBg = colors.primary;
+                  let textColor = '#FFFFFF';
+
+                  if (isDestructive) {
+                    btnBg = '#D32F2F';
+                  } else if (isCancel) {
+                    btnBg = colors.background;
+                    textColor = colors.textSecondary;
+                  }
+
+                  return (
+                    <TouchableOpacity 
+                      key={index}
+                      style={{ 
+                        backgroundColor: btnBg, 
+                        paddingVertical: 12, 
+                        borderRadius: 12, 
+                        width: '100%', 
+                        alignItems: 'center',
+                        borderWidth: isCancel ? 1 : 0,
+                        borderColor: colors.divider
+                      }}
+                      onPress={() => {
+                        setGlobalAlertVisible(false);
+                        if (btn.onPress) {
+                          setTimeout(() => btn.onPress(), 100);
+                        }
+                      }}
+                    >
+                      <Text style={{ 
+                        color: textColor, 
+                        fontWeight: '700', 
+                        fontSize: 14 
+                      }}>
+                        {btn.text}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           </View>

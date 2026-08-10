@@ -11,9 +11,12 @@ export interface AppUser {
   teamId: string;
   walletBalance: number;
   profileImageUrl?: string;
+  bio?: string;
+  avatarColor?: string;
   monthlyTarget?: number;
   currency: string;
   createdAt: Date;
+  hasPasswordSet?: boolean;
   deactivated?: boolean;
   deleted?: boolean;
   deleteAt?: any;
@@ -37,7 +40,8 @@ export interface Expense {
   category: MealCategory;
   date: Date;
   teamId: string;
-  receiptImageUrl?: string;
+  receiptImageUrl?: string | null;
+  splitUserIds?: string[];
   isEdited: boolean;
   lastEditedBy?: string;
   lastEditedAt?: Date;
@@ -57,8 +61,11 @@ export interface Attendance {
 
 export interface EditHistory {
   id: string;
+  teamId?: string;
   entityId: string;
   entityType: string;
+  action?: 'created' | 'updated' | 'deleted';
+  itemName?: string;
   userId: string;
   userName: string;
   previousData: Record<string, any>;

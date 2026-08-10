@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  ScrollView, 
-  ActivityIndicator, 
+import {
+  StyleSheet,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -32,10 +32,16 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [googleModalVisible, setGoogleModalVisible] = useState(false);
   const [isNativeAvailable, setIsNativeAvailable] = useState(true);
-  
-  // Custom email option
+  const [loginTab, setLoginTab] = useState<'google' | 'email'>('google');
+
+  // Custom email/google input
   const [customEmail, setCustomEmail] = useState('');
   const [customName, setCustomName] = useState('');
+
+  // Email+password login
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors);
@@ -49,7 +55,6 @@ export default function LoginScreen() {
     try {
       if (GoogleSignin) {
         GoogleSignin.configure({
-          // Web Client ID from Google Cloud / Firebase console
           webClientId: '20947220033-fvnaobstfc3aktvur0kf6e1cquioq6qb.apps.googleusercontent.com',
           offlineAccess: true,
         });
@@ -63,8 +68,8 @@ export default function LoginScreen() {
     }
   }, []);
 
-  const showMsg = (msg: string, isError = false) => {
-    setAlertTitle(isError ? 'Error' : 'Success');
+  const showMsg = (msg: string, isError = false, title?: string) => {
+    setAlertTitle(isError ? (title || 'Error') : (title || 'Success'));
     setAlertMessage(msg);
     setAlertIsError(isError);
     setAlertVisible(true);
@@ -91,43 +96,121 @@ export default function LoginScreen() {
     }
   };
 
-  const handleGoogleSignInNative = async () => {
-    if (!isNativeAvailable) {
-      // In development / Expo Go, open manual input modal directly
-      setGoogleModalVisible(true);
+  const handleEmailPasswordSignIn = async () => {
+    const email = emailInput.trim();
+    const password = passwordInput;
+    if (!email) {
+      showMsg('Please enter your email address.', true);
       return;
     }
+    if (!password) {
+      showMsg('Please enter your password.', true);
+      return;
+    }
+    setLoading(true);
+    try {
+      const user = await authService.signInWithEmail(email, password);
+      if (user) {
+        const teams = await authService.getUserTeams(email);
+        setUserTeams(teams);
+        setCurrentAppUser(user);
+      } else {
+        showMsg('Account found but no profile exists. Please sign in with Google first.', true);
+      }
+    } catch (e: any) {
+      showMsg(e.message || 'Sign in failed', true);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  const handleForgotPassword = async () => {
+    let email = emailInput.trim();
+    if (!email) {
+      if (Platform.OS === 'ios') {
+        Alert.prompt(
+          'Reset Password',
+          'Enter your email address to receive a password reset link:',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Send Link',
+              onPress: async (enteredEmail?: string) => {
+                if (!enteredEmail || !enteredEmail.trim()) {
+                  showMsg('Please enter a valid email address.', true);
+                  return;
+                }
+                setLoading(true);
+                try {
+                  await authService.sendPasswordReset(enteredEmail.trim());
+                  showMsg(`A password reset link has been sent to ${enteredEmail.trim()}. Please check your inbox.`, false, 'Reset Email Sent');
+                } catch (e: any) {
+                  showMsg(e.message || 'Failed to send reset email.', true);
+                } finally {
+                  setLoading(false);
+                }
+              }
+            }
+          ],
+          'plain-text',
+          '',
+          'email-address'
+        );
+        return;
+      } else {
+        showMsg('Please enter your email address in the Email field, then tap Forgot Password.', true, 'Email Required');
+        return;
+      }
+    }
+
+    setLoading(true);
+    try {
+      await authService.sendPasswordReset(email);
+      showMsg(`A password reset link has been sent to ${email}. Please check your inbox.`, false, 'Reset Email Sent');
+    } catch (e: any) {
+      showMsg(e.message || 'Failed to send reset email.', true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignInNative = async () => {
     try {
       setLoading(true);
-      await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
-      const email = userInfo.data?.user.email;
-      const name = userInfo.data?.user.name || email?.split('@')[0] || 'User';
+      if (GoogleSignin) {
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+        try {
+          await GoogleSignin.signOut();
+        } catch (_) { }
+        const userInfo = await GoogleSignin.signIn();
+        const email = userInfo.data?.user.email;
+        const name = userInfo.data?.user.name || email?.split('@')[0] || 'User';
 
-      if (email) {
-        const result = await authService.signInWithGoogle(email, name);
-        const userToSet = result.user;
-        if (userToSet) {
-          const teams = await authService.getUserTeams(email);
-          setUserTeams(teams);
-          setCurrentAppUser(userToSet);
-          showMsg('Signed in successfully with Google!');
-        } else {
-          showMsg('Unable to login with Google.', true);
+        if (email) {
+          const result = await authService.signInWithGoogle(email, name);
+          const userToSet = result.user;
+          if (userToSet) {
+            const teams = await authService.getUserTeams(email);
+            setUserTeams(teams);
+            setCurrentAppUser(userToSet);
+            showMsg('Signed in successfully with Google!');
+          } else {
+            showMsg('Unable to login with Google.', true);
+          }
         }
+      } else {
+        Alert.alert('Google Sign-In', 'Google Sign-In native module is not available in Expo Go. Please build a native APK/AAB or use Email & Password sign-in.');
       }
     } catch (error: any) {
       console.log('Native Google Sign-In Error:', error);
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-        // User cancelled, do nothing
+        // User cancelled account picker dialog, do nothing
       } else if (error.code === statusCodes.IN_PROGRESS) {
         // Operation in progress
       } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-        Alert.alert('Error', 'Google Play Services are not available or outdated.');
+        Alert.alert('Error', 'Google Play Services are not available or outdated on this device.');
       } else {
-        // Display the actual Google API error so we know if client credentials are not configured properly
-        Alert.alert('Google Sign-In Failed', error.message || 'Failed to authenticate with Google. Make sure SHA-1 is configured in Firebase.');
+        Alert.alert('Google Sign-In Error', error.message || 'Unable to connect to Google account picker.');
       }
     } finally {
       setLoading(false);
@@ -135,22 +218,21 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
         {/* Header Logo */}
         <View style={styles.header}>
-          <Image 
-            source={require('../../../assets/icon.png')} 
-            style={{ width: 100, height: 100, marginBottom: 12, borderRadius: 20, backgroundColor: '#FFFFFF' }} 
+          <Image
+            source={require('../../../assets/icon.png')}
+            style={{ width: 100, height: 100, marginBottom: 12, borderRadius: 20, backgroundColor: '#FFFFFF' }}
           />
           <Text style={styles.title}>Share Expense</Text>
-          <Text style={styles.subtitle}>by fyntech</Text>
+          <Text style={styles.subtitle}>Developed by DigitalAppsStudio in collaboration with fyntech</Text>
         </View>
 
-        {/* GOOGLE SIGN IN SCREEN */}
         <View style={styles.contentContainer}>
           <Text style={styles.welcomeText}>Welcome to Share Expense</Text>
           <Text style={styles.descText}>
@@ -158,84 +240,94 @@ export default function LoginScreen() {
           </Text>
 
           {loading ? (
-            <ActivityIndicator color={colors.primary} size="large" style={{ marginTop: 40 }} />
+            <ActivityIndicator color={colors.primary} size="large" style={{ marginTop: 32 }} />
           ) : (
-            <TouchableOpacity 
-              style={styles.googleBtn} 
-              onPress={handleGoogleSignInNative}
-            >
-              <Ionicons name="logo-google" size={20} color="#FFFFFF" style={{ marginRight: 10 }} />
-              <Text style={styles.googleBtnText}>Sign in with Google</Text>
-            </TouchableOpacity>
+            <>
+              {/* Primary: Google Sign In */}
+              <TouchableOpacity
+                style={styles.googleBtn}
+                onPress={handleGoogleSignInNative}
+              >
+                <Ionicons name="logo-google" size={20} color="#FFFFFF" style={{ marginRight: 10 }} />
+                <Text style={styles.googleBtnText}>Sign in with Google</Text>
+              </TouchableOpacity>
+
+              {/* Divider */}
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Secondary: Email + Password (collapsed by default) */}
+              {loginTab !== 'email' ? (
+                <TouchableOpacity
+                  style={styles.emailSignInLink}
+                  onPress={() => setLoginTab('email')}
+                >
+                  <Ionicons name="mail-outline" size={15} color={colors.textSecondary} style={{ marginRight: 6 }} />
+                  <Text style={styles.emailSignInLinkText}>Sign in with Email & Password</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={{ width: '100%' }}>
+                  <View style={styles.emailPanelHeader}>
+                    <Text style={styles.emailPanelTitle}>Email & Password</Text>
+                    <TouchableOpacity onPress={() => setLoginTab('google')}>
+                      <Ionicons name="close-circle-outline" size={20} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Email Address"
+                    placeholderTextColor={colors.textSecondary}
+                    value={emailInput}
+                    onChangeText={setEmailInput}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                  />
+                  <View style={{ position: 'relative' }}>
+                    <TextInput
+                      style={[styles.input, { paddingRight: 48 }]}
+                      placeholder="Password"
+                      placeholderTextColor={colors.textSecondary}
+                      value={passwordInput}
+                      onChangeText={setPasswordInput}
+                      secureTextEntry={!showPassword}
+                      autoCapitalize="none"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowPassword(v => !v)}
+                      style={{ position: 'absolute', right: 14, top: 14 }}
+                    >
+                      <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.submitBtn}
+                    onPress={handleEmailPasswordSignIn}
+                  >
+                    <Text style={styles.submitBtnText}>Sign In</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.forgotPasswordBtn}
+                    onPress={handleForgotPassword}
+                  >
+                    <Ionicons name="key-outline" size={14} color={colors.primary} style={{ marginRight: 4 }} />
+                    <Text style={styles.forgotPasswordText}>Forgot Password? Send Reset Link</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
           )}
         </View>
 
-        {/* Google Sign In Modal (Fallback Input) */}
-        <Modal
-          animationType="slide"
-          transparent={true}
-          visible={googleModalVisible}
-          onRequestClose={() => setGoogleModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Sign in with Google</Text>
-                <Text style={styles.modalSubtitle}>to continue to Share Expense</Text>
-              </View>
 
-              <View style={{ paddingVertical: 10, width: '100%' }}>
-                <TextInput 
-                  style={styles.input}
-                  placeholder="Google/Gmail Email Address"
-                  placeholderTextColor={colors.textSecondary}
-                  value={customEmail}
-                  onChangeText={setCustomEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-                <TextInput 
-                  style={styles.input}
-                  placeholder="Your Full Name"
-                  placeholderTextColor={colors.textSecondary}
-                  value={customName}
-                  onChangeText={setCustomName}
-                />
-                <TouchableOpacity 
-                  style={styles.submitBtn}
-                  onPress={() => {
-                    const trimmedEmail = customEmail.trim();
-                    const trimmedName = customName.trim();
-                    if (!trimmedEmail) {
-                      showMsg('Please provide a Google/Gmail email address.', true);
-                      return;
-                    }
-                    if (!trimmedEmail.toLowerCase().endsWith('@gmail.com')) {
-                      showMsg('Please provide a valid @gmail.com address.', true);
-                      return;
-                    }
-                    if (!trimmedName) {
-                      showMsg('Please enter your full name.', true);
-                      return;
-                    }
-                    handleGoogleSignIn(trimmedEmail, trimmedName);
-                  }}
-                >
-                  <Text style={styles.submitBtnText}>Sign In</Text>
-                </TouchableOpacity>
-              </View>
 
-              <TouchableOpacity 
-                style={styles.closeModalBtn}
-                onPress={() => setGoogleModalVisible(false)}
-              >
-                <Text style={styles.closeModalText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Custom Alert Modal (Green background, white text) */}
+        {/* Custom Alert Modal */}
         <Modal
           animationType="fade"
           transparent={true}
@@ -243,11 +335,11 @@ export default function LoginScreen() {
           onRequestClose={() => setAlertVisible(false)}
         >
           <View style={styles.modalOverlayCentered}>
-            <View style={{ 
-              backgroundColor: alertIsError ? colors.error : '#2E7D32', 
-              borderRadius: 16, 
-              padding: 24, 
-              width: '80%', 
+            <View style={{
+              backgroundColor: alertIsError ? colors.error : colors.primary,
+              borderRadius: 16,
+              padding: 24,
+              width: '80%',
               alignItems: 'center',
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 4 },
@@ -256,14 +348,14 @@ export default function LoginScreen() {
               elevation: 5
             }}>
               <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 12 }}>{alertTitle}</Text>
-              <Text style={{ fontSize: 14, color: '#E8F5E9', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
+              <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.9)', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
                 {alertMessage}
               </Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10, width: '100%', alignItems: 'center' }}
                 onPress={() => setAlertVisible(false)}
               >
-                <Text style={{ color: alertIsError ? colors.error : '#2E7D32', fontWeight: 'bold', fontSize: 14 }}>OK</Text>
+                <Text style={{ color: alertIsError ? colors.error : colors.primary, fontWeight: 'bold', fontSize: 14 }}>OK</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -335,7 +427,66 @@ const getStyles = (colors: any) => StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 40,
+    marginBottom: 28,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 16,
+    width: '100%',
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    marginHorizontal: 12,
+    fontWeight: '500',
+  },
+  emailSignInLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.inputBg,
+    width: '100%',
+  },
+  emailSignInLinkText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  emailPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    width: '100%',
+  },
+  emailPanelTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    letterSpacing: 0.3,
+  },
+  forgotPasswordBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  forgotPasswordText: {
+    fontSize: 13,
+    color: colors.primary,
+    fontWeight: '600',
   },
   googleBtn: {
     flexDirection: 'row',
