@@ -302,7 +302,7 @@ export default function UserDetailScreen() {
       });
 
       // Update local state if updating own wallet
-      if (currentAppUser?.id === userId) {
+      if (currentAppUser && currentAppUser.id === userId) {
         setCurrentAppUser({
           ...currentAppUser,
           walletBalance: newWalletAmount

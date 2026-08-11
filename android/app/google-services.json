@@ -1,0 +1,142 @@
+{
+  "project_info": {
+    "project_number": "20947220033",
+    "project_id": "share-expense-ab56b",
+    "storage_bucket": "share-expense-ab56b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:20947220033:android:ce42b9740d233c63c878c0",
+        "android_client_info": {
+          "package_name": "com.example.shared_expense_tracker"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "20947220033-qahb6i0u99k3qm0tgcedhkbt9l10bdn1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.shared_expense_tracker",
+            "certificate_hash": "f01bcb1ee0f34f9b6b9d3da92da654e6e33bfd1f"
+          }
+        },
+        {
+          "client_id": "20947220033-fvnaobstfc3aktvur0kf6e1cquioq6qb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDCyTxMI3racyY6q4_W91rnMnkF7x_eVr8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "20947220033-fvnaobstfc3aktvur0kf6e1cquioq6qb.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "20947220033-puhdmk89ef9t7p2fku179jp335acmhq6.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.sharedExpenseTracker"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:20947220033:android:a683e03073158ee8c878c0",
+        "android_client_info": {
+          "package_name": "com.fyntech.expensetracker"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "20947220033-uthmotcuqda3n7cd54u4bekb90gl1dr3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fyntech.expensetracker",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "20947220033-fvnaobstfc3aktvur0kf6e1cquioq6qb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDCyTxMI3racyY6q4_W91rnMnkF7x_eVr8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "20947220033-fvnaobstfc3aktvur0kf6e1cquioq6qb.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "20947220033-puhdmk89ef9t7p2fku179jp335acmhq6.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.sharedExpenseTracker"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:20947220033:android:9272d782e35bdb19c878c0",
+        "android_client_info": {
+          "package_name": "com.fyntech.share_expense"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "20947220033-job93ae6jfvi2sv0ouafoplnkelqpkp9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fyntech.share_expense",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "20947220033-fvnaobstfc3aktvur0kf6e1cquioq6qb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDCyTxMI3racyY6q4_W91rnMnkF7x_eVr8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "20947220033-fvnaobstfc3aktvur0kf6e1cquioq6qb.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "20947220033-puhdmk89ef9t7p2fku179jp335acmhq6.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.sharedExpenseTracker"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
