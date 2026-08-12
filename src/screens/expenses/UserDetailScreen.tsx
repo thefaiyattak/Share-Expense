@@ -268,6 +268,7 @@ export default function UserDetailScreen() {
   const usagePct = spentPct;
 
   // Handle Wallet Update
+  const [walletOperation, setWalletOperation] = useState<'add' | 'subtract'>('add');
   const [walletError, setWalletError] = useState('');
   const handleUpdateWallet = async () => {
     if (!walletInput.trim()) {
@@ -275,15 +276,18 @@ export default function UserDetailScreen() {
       return;
     }
     const val = Number(walletInput);
-    if (isNaN(val) || val < 0) {
-      setWalletError('Please enter a valid non-negative amount');
+    if (isNaN(val) || val <= 0) {
+      setWalletError('Please enter a valid positive amount');
       return;
     }
     setWalletModalVisible(false);
     setLoading(true);
     try {
-      const newWalletAmount = parseFloat(walletInput);
       const oldWallet = userWallet;
+      const newWalletAmount = walletOperation === 'add'
+        ? oldWallet + val
+        : Math.max(0, oldWallet - val);
+
       await updateDoc(doc(db, 'users', userId), {
         walletBalance: newWalletAmount
       });
@@ -294,11 +298,11 @@ export default function UserDetailScreen() {
         entityId: userId,
         entityType: 'wallet',
         action: 'updated',
-        itemName: `${userName}'s Wallet Deposit`,
+        itemName: `${userName}'s Wallet ${walletOperation === 'add' ? 'Added (+)' : 'Subtracted (-)'}`,
         userId: currentAppUser?.id || '',
         userName: currentAppUser?.name || 'Unknown',
         previousData: { walletBalance: oldWallet },
-        newData: { walletBalance: newWalletAmount }
+        newData: { walletBalance: newWalletAmount, operation: walletOperation, amount: val }
       });
 
       // Update local state if updating own wallet
@@ -309,8 +313,8 @@ export default function UserDetailScreen() {
         } as AppUser);
       }
 
-      Alert.alert('Success', 'Wallet balance updated successfully.');
-      navigation.goBack();
+      setWalletInput('');
+      Alert.alert('Success', `Wallet balance ${walletOperation === 'add' ? 'increased' : 'decreased'} successfully.`);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to update wallet balance');
     } finally {
@@ -628,22 +632,22 @@ export default function UserDetailScreen() {
             </View>
 
             {/* Net Status / Wallet Left Card */}
-            <View style={[styles.fCard2x2, { backgroundColor: isMonthPositive ? colors.financial.walletLeftLight : colors.financial.deficitLight, marginLeft: 8 }]}>
+            <View style={[styles.fCard2x2, { backgroundColor: isMonthPositive ? colors.financial.walletDepositLight : colors.financial.deficitLight, marginLeft: 8 }]}>
               <View style={styles.cardHeaderRow}>
-                <Ionicons name={isMonthPositive ? "arrow-up-circle" : "arrow-down-circle"} size={18} color={isMonthPositive ? colors.financial.walletLeft : colors.financial.deficit} />
+                <Ionicons name={isMonthPositive ? "arrow-up-circle" : "arrow-down-circle"} size={18} color={isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit} />
                 {currentAppUser?.role === 'admin' && (
                   <TouchableOpacity
                     onPress={() => setAdjustModalVisible(true)}
                     style={{ marginLeft: 'auto' }}
                   >
-                    <Ionicons name="options-outline" size={14} color={isMonthPositive ? colors.financial.walletLeft : colors.financial.deficit} />
+                    <Ionicons name="options-outline" size={14} color={isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit} />
                   </TouchableOpacity>
                 )}
               </View>
-              <Text style={[styles.fValue, { color: isMonthPositive ? colors.financial.walletLeft : colors.financial.deficit }]} numberOfLines={1}>
+              <Text style={[styles.fValue, { color: isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit }]} numberOfLines={1}>
                 {isMonthPositive ? '+' : '-'} {formatAmount(monthDisplayBalance)}
               </Text>
-              <Text style={[styles.fLabel, { color: isMonthPositive ? colors.financial.walletLeft : colors.financial.deficit }]}>
+              <Text style={[styles.fLabel, { color: isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit }]}>
                 {isMonthPositive ? 'Net Credit (To Receive)' : 'Net Deficit (To Pay)'}
               </Text>
             </View>
@@ -1177,11 +1181,46 @@ export default function UserDetailScreen() {
           style={styles.modalOverlay}
         >
           <View style={[styles.modalContent, { paddingBottom: modalBottomPadding }]}>
-            <Text style={styles.modalTitle}>Set Wallet Balance</Text>
-            <Text style={styles.modalSubtitle}>Specify the total deposit amount in this member's wallet.</Text>
+            <Text style={styles.modalTitle}>Update Wallet Deposit</Text>
+            <Text style={styles.modalSubtitle}>Add or subtract funds from {userName}'s wallet balance.</Text>
+
+            {/* Add / Subtract Switcher */}
+            <View style={{ flexDirection: 'row', backgroundColor: colors.inputBg, borderRadius: 10, padding: 3, marginBottom: 14, width: '100%' }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                  backgroundColor: walletOperation === 'add' ? colors.financial.walletDeposit : 'transparent'
+                }}
+                onPress={() => setWalletOperation('add')}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '700', color: walletOperation === 'add' ? '#FFFFFF' : colors.textSecondary }}>
+                  + Add Funds
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                  backgroundColor: walletOperation === 'subtract' ? colors.financial.deficit : 'transparent'
+                }}
+                onPress={() => setWalletOperation('subtract')}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '700', color: walletOperation === 'subtract' ? '#FFFFFF' : colors.textSecondary }}>
+                  - Deduct Funds
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             <TextInput 
               style={[styles.modalInput, walletError ? { borderColor: colors.error, borderWidth: 1.5 } : null]}
+              placeholder="Amount (e.g. 500)"
+              placeholderTextColor={colors.textSecondary}
               value={walletInput}
               onChangeText={(txt) => {
                 setWalletInput(txt);
@@ -1195,19 +1234,38 @@ export default function UserDetailScreen() {
               </Text>
             ) : null}
 
+            {/* Calculation Preview */}
+            {(() => {
+              const enteredVal = Number(walletInput.trim()) || 0;
+              const calcResult = walletOperation === 'add' ? userWallet + enteredVal : Math.max(0, userWallet - enteredVal);
+              return (
+                <View style={{ backgroundColor: colors.inputBg, borderRadius: 8, padding: 10, marginBottom: 16, width: '100%' }}>
+                  <Text style={{ fontSize: 11, color: colors.textSecondary, marginBottom: 2 }}>
+                    Current Wallet: <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{formatAmount(userWallet)}</Text>
+                  </Text>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: walletOperation === 'add' ? colors.financial.walletDeposit : colors.financial.deficit }}>
+                    New Balance: {formatAmount(calcResult)} ({walletOperation === 'add' ? `+${formatAmount(enteredVal)}` : `-${formatAmount(enteredVal)}`})
+                  </Text>
+                </View>
+              );
+            })()}
+
             <View style={styles.modalBtnRow}>
               <TouchableOpacity 
                 style={[styles.modalSubmitBtnSmall, { backgroundColor: colors.inputBg, borderWidth: 1, borderColor: colors.border }]}
-                onPress={() => setWalletModalVisible(false)}
+                onPress={() => {
+                  setWalletInput('');
+                  setWalletModalVisible(false);
+                }}
               >
                 <Text style={[styles.modalSubmitBtnTextSmall, { color: colors.textSecondary }]}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
-                style={[styles.modalSubmitBtnSmall, { backgroundColor: colors.primary }]}
+                style={[styles.modalSubmitBtnSmall, { backgroundColor: walletOperation === 'add' ? colors.financial.walletDeposit : colors.financial.deficit }]}
                 onPress={handleUpdateWallet}
               >
-                <Text style={[styles.modalSubmitBtnTextSmall, { color: '#FFFFFF' }]}>Update Balance</Text>
+                <Text style={[styles.modalSubmitBtnTextSmall, { color: '#FFFFFF' }]}>Confirm Update</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Share Expense",
     "slug": "expense_tracker_rn",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -18,7 +18,7 @@
     "android": {
       "package": "com.fyntech.expensetracker",
       "googleServicesFile": "./android/app/google-services.json",
-      "versionCode": 15,
+      "versionCode": 16,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png"

@@ -1874,7 +1874,7 @@ export default function SettingsScreen() {
 
             <View style={{ backgroundColor: colors.primary + '15', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, marginBottom: 12 }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>
-                Version 1.5.0
+                Version 1.6.0
               </Text>
             </View>
 

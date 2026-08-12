@@ -529,29 +529,22 @@ export default function ExpensesScreen() {
           const share = shares[m.id] || 0;
           const wallet = m.walletBalance || 0;
           
+          const totalContribution = wallet + spent;
+          const netPosition = totalContribution - share;
+          
           let displayBalance = 0;
           let isPositive = false;
 
-          if (wallet > 0) {
-            const netWallet = wallet - share;
-            if (netWallet >= 0) {
-              isPositive = true;
-              displayBalance = netWallet;
-            } else {
-              isPositive = false;
-              displayBalance = Math.abs(netWallet);
-            }
+          if (netPosition >= 0) {
+            isPositive = true;
+            displayBalance = netPosition;
           } else {
-            if (share > 0) {
-              isPositive = false;
-              displayBalance = share;
-            } else {
-              isPositive = true;
-              displayBalance = 0;
-            }
+            isPositive = false;
+            displayBalance = Math.abs(netPosition);
           }
 
-          const bColor = isPositive ? colors.financial.walletLeft : colors.financial.deficit;
+          const badgeBgColor = isPositive ? colors.financial.walletDepositLight : colors.financial.deficitLight;
+          const badgeTextColor = isPositive ? colors.financial.walletDeposit : colors.financial.deficit;
           const initials = m.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
           const cardColors = ['#E8F5E9', '#FFF3E0', '#E3F2FD', '#FCE4EC', '#F3E5F5'];
@@ -604,21 +597,21 @@ export default function ExpensesScreen() {
                   </Text>
                 </View>
 
-                <View style={[styles.balanceBadge, { backgroundColor: bColor + '19' }]}>
-                  <Ionicons name={isPositive ? "arrow-up" : "arrow-down"} size={12} color={bColor} />
-                  <Text style={[styles.balanceText, { color: bColor }]}>
+                <View style={[styles.balanceBadge, { backgroundColor: badgeBgColor }]}>
+                  <Ionicons name={isPositive ? "arrow-up" : "arrow-down"} size={12} color={badgeTextColor} />
+                  <Text style={[styles.balanceText, { color: badgeTextColor }]}>
                     {isPositive ? '+' : '-'} {formatAmount(displayBalance)}
                   </Text>
                 </View>
               </View>
 
-              {/* Budget Progress Bar */}
+              {/* Budget Progress Bar / Net Status Indicator */}
               <View style={styles.progressBarBg}>
                 <View style={[
                   styles.progressBarFill, 
                   { 
-                    width: `${progressVal * 100}%`,
-                    backgroundColor: progressVal > 0.8 ? colors.error : colors.primary 
+                    width: '100%',
+                    backgroundColor: badgeTextColor 
                   }
                 ]} />
               </View>
