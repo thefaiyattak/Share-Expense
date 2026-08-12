@@ -33,37 +33,68 @@ export const FINANCIAL_COLORS = {
   deficitLight: '#FFEBEE',
 };
 
-export const getThemeColors = (darkMode: boolean) => {
-  return {
-    primary: AppColors.primary,
-    primaryDark: AppColors.primaryDark,
-    primaryLight: darkMode ? '#1B3B2B' : AppColors.primaryLight,
-    error: AppColors.error,
-    warning: AppColors.warning,
-    surface: darkMode ? AppColors.darkSurface : AppColors.surface,
-    background: darkMode ? AppColors.darkBackground : AppColors.background,
-    textPrimary: darkMode ? '#FFFFFF' : AppColors.textPrimary,
-    textSecondary: darkMode ? '#CCCCCC' : AppColors.textSecondary,
-    textTertiary: darkMode ? '#999999' : AppColors.textTertiary,
-    divider: darkMode ? '#2A2A2A' : AppColors.divider,
-    cardBg: darkMode ? '#1E1E1E' : '#FFFFFF',
-    border: darkMode ? '#333333' : '#E9ECEF',
-    inputBg: darkMode ? '#262626' : '#F8F9FA',
+const lightThemeCache = {
+  primary: AppColors.primary,
+  primaryDark: AppColors.primaryDark,
+  primaryLight: AppColors.primaryLight,
+  error: AppColors.error,
+  warning: AppColors.warning,
+  surface: AppColors.surface,
+  background: AppColors.background,
+  textPrimary: AppColors.textPrimary,
+  textSecondary: AppColors.textSecondary,
+  textTertiary: AppColors.textTertiary,
+  divider: AppColors.divider,
+  cardBg: '#FFFFFF',
+  border: '#E9ECEF',
+  inputBg: '#F8F9FA',
 
-    // Dedicated Financial Category Theme Colors
-    financial: {
-      walletDeposit: darkMode ? '#81C784' : FINANCIAL_COLORS.walletDeposit,
-      walletDepositLight: darkMode ? '#1B3B2B' : FINANCIAL_COLORS.walletDepositLight,
-      spent: darkMode ? '#FF8A80' : FINANCIAL_COLORS.spent,
-      spentLight: darkMode ? '#3E1F1F' : FINANCIAL_COLORS.spentLight,
-      calculatedShare: darkMode ? '#64B5F6' : FINANCIAL_COLORS.calculatedShare,
-      calculatedShareLight: darkMode ? '#1F2E3E' : FINANCIAL_COLORS.calculatedShareLight,
-      walletLeft: darkMode ? '#FFD54F' : FINANCIAL_COLORS.walletLeft,
-      walletLeftLight: darkMode ? '#3E341F' : FINANCIAL_COLORS.walletLeftLight,
-      deficit: darkMode ? '#FF8A80' : FINANCIAL_COLORS.deficit,
-      deficitLight: darkMode ? '#3E1F1F' : FINANCIAL_COLORS.deficitLight,
-    }
-  };
+  financial: {
+    walletDeposit: FINANCIAL_COLORS.walletDeposit,
+    walletDepositLight: FINANCIAL_COLORS.walletDepositLight,
+    spent: FINANCIAL_COLORS.spent,
+    spentLight: FINANCIAL_COLORS.spentLight,
+    calculatedShare: FINANCIAL_COLORS.calculatedShare,
+    calculatedShareLight: FINANCIAL_COLORS.calculatedShareLight,
+    walletLeft: FINANCIAL_COLORS.walletLeft,
+    walletLeftLight: FINANCIAL_COLORS.walletLeftLight,
+    deficit: FINANCIAL_COLORS.deficit,
+    deficitLight: FINANCIAL_COLORS.deficitLight,
+  }
+};
+
+const darkThemeCache = {
+  primary: AppColors.primary,
+  primaryDark: AppColors.primaryDark,
+  primaryLight: '#1B3B2B',
+  error: AppColors.error,
+  warning: AppColors.warning,
+  surface: AppColors.darkSurface,
+  background: AppColors.darkBackground,
+  textPrimary: '#FFFFFF',
+  textSecondary: '#CCCCCC',
+  textTertiary: '#999999',
+  divider: '#2A2A2A',
+  cardBg: '#1E1E1E',
+  border: '#333333',
+  inputBg: '#262626',
+
+  financial: {
+    walletDeposit: '#81C784',
+    walletDepositLight: '#1B3B2B',
+    spent: '#FF8A80',
+    spentLight: '#3E1F1F',
+    calculatedShare: '#64B5F6',
+    calculatedShareLight: '#1F2E3E',
+    walletLeft: '#FFD54F',
+    walletLeftLight: '#3E341F',
+    deficit: '#FF8A80',
+    deficitLight: '#3E1F1F',
+  }
+};
+
+export const getThemeColors = (darkMode: boolean) => {
+  return darkMode ? darkThemeCache : lightThemeCache;
 };
 
 export const AppTheme = {

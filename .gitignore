@@ -37,7 +37,9 @@ yarn-error.*
 *.tsbuildinfo
 
 # generated native folders
-/ios
+# temporary local bundle outputs & tools
+bundletool.jar
+*.apks
 /android
 
 # firebase key
