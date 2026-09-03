@@ -27,7 +27,10 @@ import { useNavigation } from '@react-navigation/native';
 import Svg, { G, Circle } from 'react-native-svg';
 import { calculateIntegerPercentages } from '../../utils/math';
 import ChangeHistoryModal from '../../components/ChangeHistoryModal';
+import MonthPickerModal from '../../components/MonthPickerModal';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
+import SettlementModal from '../../components/SettlementModal';
+import { settlementService } from '../../services/settlementService';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental && !(globalThis as any).nativeFabricUIManager && !(globalThis as any).__turboModuleProxy) {
   try {
@@ -47,7 +50,27 @@ export default function ExpensesScreen() {
   const [adding, setAdding] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
+  const [settlementModalVisible, setSettlementModalVisible] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [monthPickerVisible, setMonthPickerVisible] = useState(false);
+
+  // Selected Month State
+  const [selectedMonthDate, setSelectedMonthDate] = useState<Date>(() => new Date());
+
+  const handlePrevMonth = () => {
+    setSelectedMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    const today = new Date();
+    setSelectedMonthDate(prev => {
+      const next = new Date(prev.getFullYear(), prev.getMonth() + 1, 1);
+      if (next.getFullYear() > today.getFullYear() || (next.getFullYear() === today.getFullYear() && next.getMonth() > today.getMonth())) {
+        return prev;
+      }
+      return next;
+    });
+  };
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
@@ -68,27 +91,39 @@ export default function ExpensesScreen() {
     return isNaN(d.getTime()) ? new Date(0) : d;
   }, [currentAppUser?.createdAt]);
 
-  const currentMonthStart = React.useMemo(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-  }, []);
+  const selectedMonthStart = React.useMemo(() => {
+    return new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth(), 1, 0, 0, 0);
+  }, [selectedMonthDate]);
 
-  const currentMonthEnd = React.useMemo(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-  }, []);
+  const selectedMonthEnd = React.useMemo(() => {
+    return new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 0, 23, 59, 59);
+  }, [selectedMonthDate]);
 
   const visibleExpenses = React.useMemo(() => {
     return expenses.filter(e => {
       const d = new Date(e.date);
-      return d >= currentMonthStart && d <= currentMonthEnd;
+      return d >= selectedMonthStart && d <= selectedMonthEnd;
     });
-  }, [expenses, currentMonthStart, currentMonthEnd]);
+  }, [expenses, selectedMonthStart, selectedMonthEnd]);
+
+  const currentMonthKey = React.useMemo(() => {
+    return `${selectedMonthDate.getFullYear()}-${String(selectedMonthDate.getMonth() + 1).padStart(2, '0')}`;
+  }, [selectedMonthDate]);
+
+  const getMemberCurrentMonthWallet = React.useCallback((m: any) => {
+    if (m?.monthlyWallets && m.monthlyWallets[currentMonthKey] !== undefined) {
+      return m.monthlyWallets[currentMonthKey];
+    }
+    if (currentMonthKey === '2026-08' && (!m?.monthlyWallets || Object.keys(m.monthlyWallets).length === 0)) {
+      return m?.walletBalance || 0;
+    }
+    return 0;
+  }, [currentMonthKey]);
 
   // Dynamic calculations
   const totalWallet = React.useMemo(() => {
-    return members.reduce((sum, m) => sum + (m.walletBalance || 0), 0);
-  }, [members]);
+    return members.reduce((sum, m) => sum + getMemberCurrentMonthWallet(m), 0);
+  }, [members, getMemberCurrentMonthWallet]);
   
   // Calculate total spent by each user in a single pass
   const { memberSpentMap, totalSpent } = React.useMemo(() => {
@@ -117,6 +152,15 @@ export default function ExpensesScreen() {
       allIds: memberIds
     });
   }, [visibleExpenses, memberIds]);
+
+  const settlementSummary = React.useMemo(() => {
+    return settlementService.calculateSettlement({
+      members,
+      memberSpentMap,
+      shares,
+      monthKey: currentMonthKey,
+    });
+  }, [members, memberSpentMap, shares, currentMonthKey]);
 
   const handleShareTeamId = () => {
     if (activeTeamId) {
@@ -168,16 +212,19 @@ export default function ExpensesScreen() {
   const handleExportPdf = async () => {
     if (!currentAppUser) return;
     
+    const selectedMonthLabel = selectedMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
     const runPdfExport = async (targetUserId?: string, userList?: any[]) => {
       try {
         const uri = await pdfService.generatePdf({
           users: userList || members,
-          expenses: expenses,
-          dateRange: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+          expenses: visibleExpenses,
+          dateRange: selectedMonthLabel,
           teamName: (currentAppUser as any)?.teamName || 'Share Expense',
           currency,
           targetUserId,
-          skipShare: true
+          skipShare: true,
+          monthKey: currentMonthKey
         });
         const reportLabel = targetUserId ? `Individual_${targetUserId}` : 'Collective';
         setTimeout(() => {
@@ -188,7 +235,7 @@ export default function ExpensesScreen() {
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Save to Device',
-                onPress: () => pdfService.saveFileToDevice(uri, `ShareExpense_${reportLabel}_${Date.now()}.pdf`, 'application/pdf')
+                onPress: () => pdfService.saveFileToDevice(uri, `ShareExpense_${reportLabel}_${currentMonthKey}.pdf`, 'application/pdf')
               },
               {
                 text: 'Share',
@@ -205,7 +252,7 @@ export default function ExpensesScreen() {
     if (currentAppUser.role === 'admin') {
       Alert.alert(
         'Export PDF Statement',
-        'Choose report scope:',
+        `Choose report scope for ${selectedMonthLabel}:`,
         [
           { text: 'Cancel', style: 'cancel' },
           { 
@@ -241,12 +288,13 @@ export default function ExpensesScreen() {
 
   const handleExportCsv = async () => {
     if (!currentAppUser) return;
+    const selectedMonthLabel = selectedMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     
     const runCsvExport = async (targetUserId?: string) => {
       try {
         const uri = await pdfService.generateCsv({
-          expenses: expenses,
-          dateRange: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+          expenses: visibleExpenses,
+          dateRange: selectedMonthLabel,
           teamName: (currentAppUser as any)?.teamName || 'Share Expense',
           currency,
           targetUserId,
@@ -261,7 +309,7 @@ export default function ExpensesScreen() {
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Save to Device',
-                onPress: () => pdfService.saveFileToDevice(uri, `ShareExpense_${reportLabel}_${Date.now()}.csv`, 'text/csv')
+                onPress: () => pdfService.saveFileToDevice(uri, `ShareExpense_${reportLabel}_${currentMonthKey}.csv`, 'text/csv')
               },
               {
                 text: 'Share',
@@ -440,17 +488,36 @@ export default function ExpensesScreen() {
           />
         }
       >
-        {/* Modern Header Bar */}
+        {/* Modern Header Bar with Month Selector */}
         <View style={styles.headerBar}>
           <Text style={styles.screenHeader}>Expenses</Text>
-          <TouchableOpacity 
-            style={styles.historyBtnPill}
-            onPress={() => setHistoryModalVisible(true)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="time-outline" size={15} color={colors.primary} style={{ marginRight: 4 }} />
-            <Text style={styles.historyBtnText}>History</Text>
-          </TouchableOpacity>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {/* Month Selector Pill */}
+            <View style={styles.monthPillContainer}>
+              <TouchableOpacity onPress={handlePrevMonth} style={styles.monthPillBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="chevron-back" size={15} color={colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setMonthPickerVisible(true)} style={styles.monthPillCenterBtn}>
+                <Ionicons name="calendar-outline" size={13} color={colors.primary} style={{ marginRight: 4 }} />
+                <Text style={styles.monthPillText}>
+                  {selectedMonthDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleNextMonth} style={styles.monthPillBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="chevron-forward" size={15} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.historyBtnPill}
+              onPress={() => setHistoryModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="time-outline" size={15} color={colors.primary} style={{ marginRight: 4 }} />
+              <Text style={styles.historyBtnText}>History</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Collective Wallet Hero Card */}
@@ -527,7 +594,7 @@ export default function ExpensesScreen() {
         {members.map((m, idx) => {
           const spent = memberSpentMap[m.id] || 0;
           const share = shares[m.id] || 0;
-          const wallet = m.walletBalance || 0;
+          const wallet = getMemberCurrentMonthWallet(m);
           
           const totalContribution = wallet + spent;
           const netPosition = totalContribution - share;
@@ -574,11 +641,12 @@ export default function ExpensesScreen() {
                 userName: displayName, 
                 userInitials: initials, 
                 spent, 
-                wallet: m.walletBalance, 
+                wallet, 
                 balance: isPositive ? displayBalance : -displayBalance,
                 avatarBg,
                 avatarText,
-                profileImageUrl: m.profileImageUrl
+                profileImageUrl: m.profileImageUrl,
+                initialMonthDate: selectedMonthDate.toISOString()
               })}
             >
               <View style={styles.memberMainRow}>
@@ -618,6 +686,24 @@ export default function ExpensesScreen() {
             </TouchableOpacity>
           );
         })}
+
+        {/* Settlement Plan Button */}
+        <TouchableOpacity 
+          style={styles.settlementBannerBtn} 
+          onPress={() => setSettlementModalVisible(true)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.settlementBannerIconCircle}>
+            <Ionicons name="git-network-outline" size={20} color="#FFFFFF" />
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.settlementBannerTitle}>Settlement Plan</Text>
+            <Text style={styles.settlementBannerSubtitle}>
+              Wallet Pool Refunds · Direct Peer-to-Peer Settlement
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+        </TouchableOpacity>
 
         {/* Document Exporting Buttons */}
         <View style={styles.exportRow}>
@@ -716,6 +802,28 @@ export default function ExpensesScreen() {
           visible={historyModalVisible}
           onClose={() => setHistoryModalVisible(false)}
         />
+
+        {/* Smart Settlement Modal */}
+        <SettlementModal
+          visible={settlementModalVisible}
+          onClose={() => setSettlementModalVisible(false)}
+          teamName={(currentAppUser as any)?.teamName || (activeTeamId ? `Group (${activeTeamId})` : 'Group')}
+          currency={currency}
+          modalBottomPadding={modalBottomPadding}
+          initialMonthDate={selectedMonthDate}
+        />
+
+        {/* Month Picker Modal */}
+        <MonthPickerModal
+          visible={monthPickerVisible}
+          selectedDate={selectedMonthDate}
+          onSelect={(d) => {
+            setSelectedMonthDate(d);
+            setMonthPickerVisible(false);
+          }}
+          onClose={() => setMonthPickerVisible(false)}
+          darkMode={darkMode}
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -740,6 +848,32 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
     fontSize: 22,
     fontWeight: 'bold',
     color: colors.textPrimary,
+  },
+  monthPillContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primaryLight,
+    borderRadius: 16,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  monthPillBtn: {
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  monthPillCenterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  monthPillText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   historyBtnPill: {
     flexDirection: 'row',
@@ -1041,9 +1175,54 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
     height: '100%',
     borderRadius: 2.5,
   },
+  settlementBannerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.cardBg,
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 14,
+    borderWidth: 1.5,
+    borderColor: colors.primary + '40',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  settlementBannerIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settlementBannerTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+  },
+  settlementBannerPill: {
+    backgroundColor: colors.primary + '18',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 6,
+  },
+  settlementBannerPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  settlementBannerSubtitle: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
   exportRow: {
     flexDirection: 'row',
-    marginTop: 14,
+    marginTop: 10,
     gap: 10,
   },
   exportBtn: {

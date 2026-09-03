@@ -117,8 +117,14 @@ export default function UserDetailScreen() {
     return isNaN(d.getTime()) ? new Date(0) : d;
   }, [currentAppUser?.createdAt]);
 
+  const initialDate = route.params?.initialMonthDate 
+    ? new Date(route.params.initialMonthDate) 
+    : new Date();
+
   // Month Selector State
-  const [selectedMonthDate, setSelectedMonthDate] = useState<Date>(new Date());
+  const [selectedMonthDate, setSelectedMonthDate] = useState<Date>(
+    isNaN(initialDate.getTime()) ? new Date() : initialDate
+  );
 
   const handlePrevMonth = () => {
     setSelectedMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -178,19 +184,25 @@ export default function UserDetailScreen() {
     return selectedMonthDate.getFullYear() === now.getFullYear() && selectedMonthDate.getMonth() === now.getMonth();
   }, [selectedMonthDate]);
 
+  const selectedMonthKey = React.useMemo(() => {
+    return `${selectedMonthDate.getFullYear()}-${String(selectedMonthDate.getMonth() + 1).padStart(2, '0')}`;
+  }, [selectedMonthDate]);
+
   const userMemberObj = members.find(m => m.id === userId);
   
   const userWallet = React.useMemo(() => {
-    if (isCurrentMonth) {
-      return userMemberObj ? userMemberObj.walletBalance : wallet;
+    // 1. If monthlyWallets exists and has this month recorded, use it
+    if (userMemberObj?.monthlyWallets && userMemberObj.monthlyWallets[selectedMonthKey] !== undefined) {
+      return userMemberObj.monthlyWallets[selectedMonthKey];
     }
-    // For past months with no expenses/activity, wallet is 0
-    if (!monthTeamExpenses || monthTeamExpenses.length === 0) {
-      return 0;
+    // 2. Legacy fallback for August 2026 (the active month before monthly separation)
+    // if the user has not yet initialized monthlyWallets
+    if (selectedMonthKey === '2026-08' && (!userMemberObj?.monthlyWallets || Object.keys(userMemberObj.monthlyWallets).length === 0)) {
+      return userMemberObj ? userMemberObj.walletBalance : (wallet || 3575);
     }
-    // For past months with expenses, use real calculated month share/spent
-    return userMonthShare > 0 ? userMonthShare : monthUserSpent;
-  }, [isCurrentMonth, userMemberObj, wallet, monthTeamExpenses, monthUserSpent, userMonthShare]);
+    // 3. Every other month starts with 0 by default until carried over or deposited
+    return 0;
+  }, [userMemberObj, selectedMonthKey, wallet]);
 
   // Net balance / wallet deduction status for selected month
   let monthDisplayBalance = 0;
@@ -288,8 +300,15 @@ export default function UserDetailScreen() {
         ? oldWallet + val
         : Math.max(0, oldWallet - val);
 
+      const existingMonthlyWallets = userMemberObj?.monthlyWallets || {};
+      const updatedMonthlyWallets = {
+        ...existingMonthlyWallets,
+        [selectedMonthKey]: newWalletAmount
+      };
+
       await updateDoc(doc(db, 'users', userId), {
-        walletBalance: newWalletAmount
+        monthlyWallets: updatedMonthlyWallets,
+        ...(isCurrentMonth ? { walletBalance: newWalletAmount } : {})
       });
 
       // Log audit history
@@ -298,23 +317,24 @@ export default function UserDetailScreen() {
         entityId: userId,
         entityType: 'wallet',
         action: 'updated',
-        itemName: `${userName}'s Wallet ${walletOperation === 'add' ? 'Added (+)' : 'Subtracted (-)'}`,
+        itemName: `${userName}'s Wallet ${walletOperation === 'add' ? 'Added (+)' : 'Subtracted (-)'} for ${selectedMonthKey}`,
         userId: currentAppUser?.id || '',
         userName: currentAppUser?.name || 'Unknown',
-        previousData: { walletBalance: oldWallet },
-        newData: { walletBalance: newWalletAmount, operation: walletOperation, amount: val }
+        previousData: { walletBalance: oldWallet, monthKey: selectedMonthKey },
+        newData: { walletBalance: newWalletAmount, operation: walletOperation, amount: val, monthKey: selectedMonthKey }
       });
 
       // Update local state if updating own wallet
       if (currentAppUser && currentAppUser.id === userId) {
         setCurrentAppUser({
           ...currentAppUser,
-          walletBalance: newWalletAmount
+          monthlyWallets: updatedMonthlyWallets,
+          ...(isCurrentMonth ? { walletBalance: newWalletAmount } : {})
         } as AppUser);
       }
 
       setWalletInput('');
-      Alert.alert('Success', `Wallet balance ${walletOperation === 'add' ? 'increased' : 'decreased'} successfully.`);
+      Alert.alert('Success', `Wallet deposit for ${selectedMonthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} ${walletOperation === 'add' ? 'increased' : 'decreased'} successfully.`);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to update wallet balance');
     } finally {
@@ -337,49 +357,63 @@ export default function UserDetailScreen() {
     setAdjustModalVisible(false);
     setLoading(true);
     try {
-      const currentWallet = userWallet;
-      // Credit increases wallet (+), Debit reduces wallet (-)
-      const newWalletAmount = adjustType === 'credit' 
-        ? currentWallet + val 
-        : currentWallet - val;
+      const oldWallet = userWallet;
+      const newWalletAmount = adjustType === 'credit'
+        ? oldWallet + val
+        : Math.max(0, oldWallet - val);
+
+      const existingMonthlyWallets = userMemberObj?.monthlyWallets || {};
+      const updatedMonthlyWallets = {
+        ...existingMonthlyWallets,
+        [selectedMonthKey]: newWalletAmount
+      };
 
       await updateDoc(doc(db, 'users', userId), {
-        walletBalance: newWalletAmount
+        monthlyWallets: updatedMonthlyWallets,
+        ...(isCurrentMonth ? { walletBalance: newWalletAmount } : {})
       });
 
-      // Log audit history for admin adjustment
-      const reasonText = adjustReasonInput.trim() ? ` (${adjustReasonInput.trim()})` : '';
-      const auditItemName = `${userName}'s Wallet ${adjustType === 'credit' ? 'Credit (+)' : 'Debit (-)'}${reasonText}`;
-      
+      // LOG HISTORY AUDIT
+      const auditItemName = `Admin Adjustment for ${userName} (${adjustType === 'credit' ? '+' : '-'}${formatAmount(val)})`;
       await expenseService.logAuditLog({
         teamId: activeTeamId || currentAppUser?.teamId || '',
         entityId: userId,
-        entityType: 'wallet_adjustment',
+        entityType: 'admin_adjustment',
         action: 'updated',
         itemName: auditItemName,
         userId: currentAppUser?.id || '',
         userName: currentAppUser?.name || 'Admin',
-        previousData: { walletBalance: currentWallet },
-        newData: { walletBalance: newWalletAmount, adjustmentType: adjustType, amount: val, reason: adjustReasonInput.trim() }
+        previousData: { walletBalance: oldWallet, monthKey: selectedMonthKey },
+        newData: {
+          walletBalance: newWalletAmount,
+          adjustType,
+          amount: val,
+          reason: adjustReasonInput.trim() || 'No reason provided',
+          monthKey: selectedMonthKey
+        }
       });
 
       // PUSH REAL-TIME NOTIFICATION
       const targetTeamId = activeTeamId || currentAppUser?.teamId;
       if (targetTeamId) {
-        const notifTitle = `Wallet ${adjustType === 'credit' ? 'Credited (+)' : 'Debited (-)'}`;
-        const notifDesc = `Admin ${currentAppUser?.name || ''} ${adjustType === 'credit' ? 'credited' : 'debited'} ${formatAmount(val)} for ${userName}${reasonText}.`;
-        await notificationService.notify(targetTeamId, notifTitle, notifDesc, 'adjustments');
+        const notifTitle = 'Balance Adjusted by Admin';
+        const notifDesc = `Admin ${currentAppUser?.name || ''} ${adjustType === 'credit' ? 'credited' : 'debited'} ${formatAmount(val)} to ${userName}'s ${selectedMonthDate.toLocaleDateString('en-US', { month: 'short' })} wallet.`;
+        await notificationService.notify(targetTeamId, notifTitle, notifDesc, 'transfers');
       }
 
       if (currentAppUser?.id === userId) {
-        setCurrentAppUser({ ...currentAppUser, walletBalance: newWalletAmount } as AppUser);
+        setCurrentAppUser({
+          ...currentAppUser,
+          monthlyWallets: updatedMonthlyWallets,
+          ...(isCurrentMonth ? { walletBalance: newWalletAmount } : {})
+        } as AppUser);
       }
 
       setAdjustAmountInput('');
       setAdjustReasonInput('');
       Alert.alert(
         'Balance Adjusted',
-        `Successfully ${adjustType === 'credit' ? 'credited' : 'debited'} ${formatAmount(val)} for ${userName}. New wallet balance: ${formatAmount(newWalletAmount)}.`
+        `Successfully ${adjustType === 'credit' ? 'credited' : 'debited'} ${formatAmount(val)} for ${userName}. New ${selectedMonthDate.toLocaleDateString('en-US', { month: 'short' })} wallet deposit: ${formatAmount(newWalletAmount)}.`
       );
       navigation.goBack();
     } catch (e: any) {
@@ -401,13 +435,18 @@ export default function UserDetailScreen() {
       return;
     }
 
+    // Determine target next month
+    const nextMonthDate = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 1);
+    const nextMonthKey = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const nextMonthName = nextMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
     const directionLabel = isMonthPositive ? 'Surplus (+)' : 'Deficit (-)';
     const amountFormatted = formatAmount(monthDisplayBalance);
     const selectedMonthName = selectedMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
     Alert.alert(
       'Carry Over to Next Month',
-      `Are you sure you want to transfer the ${directionLabel} of ${amountFormatted} from ${selectedMonthName} to ${userName}'s next month wallet?`,
+      `Are you sure you want to transfer the ${directionLabel} of ${amountFormatted} from ${selectedMonthName} into ${userName}'s ${nextMonthName} wallet?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -415,17 +454,27 @@ export default function UserDetailScreen() {
           onPress: async () => {
             setLoading(true);
             try {
-              const currentWallet = userWallet;
-              // If positive surplus: add to next month wallet (+). If negative deficit: adjust/deduct from wallet (-).
+              const existingMonthlyWallets = userMemberObj?.monthlyWallets || {};
+              const nextMonthCurrentWallet = existingMonthlyWallets[nextMonthKey] ?? 0;
+              // If positive surplus: add to next month wallet (+). If negative deficit: deduct from wallet (-).
               const netTransfer = isMonthPositive ? monthDisplayBalance : -monthDisplayBalance;
-              const newWalletAmount = currentWallet + netTransfer;
+              const nextMonthNewWallet = Math.max(0, nextMonthCurrentWallet + netTransfer);
+
+              const updatedMonthlyWallets = {
+                ...existingMonthlyWallets,
+                [nextMonthKey]: nextMonthNewWallet
+              };
+
+              const now = new Date();
+              const isTargetCurrentMonth = nextMonthDate.getFullYear() === now.getFullYear() && nextMonthDate.getMonth() === now.getMonth();
 
               await updateDoc(doc(db, 'users', userId), {
-                walletBalance: newWalletAmount
+                monthlyWallets: updatedMonthlyWallets,
+                ...(isTargetCurrentMonth ? { walletBalance: nextMonthNewWallet } : {})
               });
 
               // LOG HISTORY AUDIT
-              const auditItemName = `${selectedMonthName} Balance Carry-over for ${userName}`;
+              const auditItemName = `${selectedMonthName} Balance Carried into ${nextMonthName} for ${userName}`;
               await expenseService.logAuditLog({
                 teamId: activeTeamId || currentAppUser?.teamId || '',
                 entityId: userId,
@@ -434,25 +483,36 @@ export default function UserDetailScreen() {
                 itemName: auditItemName,
                 userId: currentAppUser?.id || '',
                 userName: currentAppUser?.name || 'Admin',
-                previousData: { walletBalance: currentWallet },
-                newData: { walletBalance: newWalletAmount, netTransfer, fromMonth: selectedMonthName, transferAmount: monthDisplayBalance, isPositive: isMonthPositive }
+                previousData: { targetMonthWallet: nextMonthCurrentWallet, targetMonthKey: nextMonthKey },
+                newData: {
+                  targetMonthWallet: nextMonthNewWallet,
+                  netTransfer,
+                  fromMonth: selectedMonthName,
+                  toMonth: nextMonthName,
+                  transferAmount: monthDisplayBalance,
+                  isPositive: isMonthPositive
+                }
               });
 
               // PUSH REAL-TIME NOTIFICATION
               const targetTeamId = activeTeamId || currentAppUser?.teamId;
               if (targetTeamId) {
                 const notifTitle = 'Month-End Balance Transferred';
-                const notifDesc = `Admin ${currentAppUser?.name || ''} transferred ${directionLabel} of ${amountFormatted} from ${selectedMonthName} to ${userName}'s active wallet.`;
+                const notifDesc = `Admin ${currentAppUser?.name || ''} transferred ${directionLabel} of ${amountFormatted} from ${selectedMonthName} into ${userName}'s ${nextMonthName} wallet.`;
                 await notificationService.notify(targetTeamId, notifTitle, notifDesc, 'transfers');
               }
 
               if (currentAppUser?.id === userId) {
-                setCurrentAppUser({ ...currentAppUser, walletBalance: newWalletAmount } as AppUser);
+                setCurrentAppUser({
+                  ...currentAppUser,
+                  monthlyWallets: updatedMonthlyWallets,
+                  ...(isTargetCurrentMonth ? { walletBalance: nextMonthNewWallet } : {})
+                } as AppUser);
               }
 
               Alert.alert(
                 'Transfer Complete',
-                `Transferred ${isMonthPositive ? '+' : '-'}${amountFormatted} from ${selectedMonthName} to active wallet balance.`
+                `Transferred ${isMonthPositive ? '+' : '-'}${amountFormatted} from ${selectedMonthName} into ${nextMonthName} wallet (New Balance: ${formatAmount(nextMonthNewWallet)}).`
               );
               navigation.goBack();
             } catch (e: any) {

@@ -35,6 +35,7 @@ import StatisticsScreen from './src/screens/statistics/StatisticsScreen';
 import SettingsScreen from './src/screens/settings/SettingsScreen';
 import AddExpenseScreen from './src/screens/data_entry/AddExpenseScreen';
 import UserDetailScreen from './src/screens/expenses/UserDetailScreen';
+import MoneyCircleScreen from './src/screens/home/MoneyCircleScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -261,6 +262,7 @@ export default function App() {
                 <Stack.Screen name="MainTabs" component={TabNavigator} />
                 <Stack.Screen name="AddExpense" component={AddExpenseScreen} />
                 <Stack.Screen name="UserDetail" component={UserDetailScreen} />
+                <Stack.Screen name="MoneyCircle" component={MoneyCircleScreen} />
               </>
             ) : (
               <Stack.Screen name="Login" component={LoginScreen} />

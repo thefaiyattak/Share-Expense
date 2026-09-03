@@ -10,6 +10,7 @@ export interface AppUser {
   role: UserRole;
   teamId: string;
   walletBalance: number;
+  monthlyWallets?: Record<string, number>;
   profileImageUrl?: string;
   bio?: string;
   avatarColor?: string;
@@ -71,4 +72,18 @@ export interface EditHistory {
   previousData: Record<string, any>;
   newData: Record<string, any>;
   timestamp: Date;
+}
+
+export interface PersonalLoan {
+  id: string;
+  teamId: string;
+  lenderId: string;         // Member who gave/lent money
+  lenderName: string;
+  borrowerId: string;       // Member who received/borrowed money
+  borrowerName: string;
+  amount: number;
+  date: string;             // ISO date string
+  note?: string;
+  status: 'PENDING' | 'SETTLED';
+  createdAt: string;
 }

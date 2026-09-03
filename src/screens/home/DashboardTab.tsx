@@ -30,6 +30,10 @@ import Svg, { Circle } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GlobalLoader } from '../../components/GlobalLoader';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
+import AppTutorialModal from '../../components/AppTutorialModal';
+import LoanModal from '../../components/LoanModal';
+import { loanService } from '../../services/loanService';
+import { PersonalLoan } from '../../models/types';
 
 const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
 
@@ -55,6 +59,24 @@ export default function DashboardTab() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
+  const [tutorialModalVisible, setTutorialModalVisible] = useState(false);
+  const [loanModalVisible, setLoanModalVisible] = useState(false);
+  const [loanModalInitialType, setLoanModalInitialType] = useState<'give' | 'borrow'>('give');
+  const [personalLoans, setPersonalLoans] = useState<PersonalLoan[]>([]);
+
+  // Load personal loans
+  useEffect(() => {
+    if (currentAppUser?.teamId && currentAppUser?.id) {
+      loanService.getLoans(currentAppUser.teamId, currentAppUser.id)
+        .then(setPersonalLoans)
+        .catch(() => {});
+    }
+  }, [currentAppUser?.teamId, currentAppUser?.id]);
+
+  const loanSummary = useMemo(() => {
+    if (!currentAppUser?.id) return { toCollect: 0, toPay: 0, netBalance: 0 };
+    return loanService.getUserLoanSummary(currentAppUser.id, personalLoans);
+  }, [currentAppUser?.id, personalLoans]);
 
   useEffect(() => {
     if (!currentAppUser?.id) return;
@@ -835,14 +857,28 @@ export default function DashboardTab() {
     setWalletModalVisible(false);
     setLoading(true);
     try {
-      const currentWallet = currentAppUser.walletBalance || 0;
+      const viewingMonthKey = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}`;
+      const existingMonthlyWallets = currentAppUser.monthlyWallets || {};
+      const currentMonthWallet = existingMonthlyWallets[viewingMonthKey] !== undefined
+        ? existingMonthlyWallets[viewingMonthKey]
+        : (viewingMonthKey === '2026-08' ? (currentAppUser.walletBalance || 0) : 0);
+
       const newBal = walletOperation === 'add' 
-        ? currentWallet + addedVal 
-        : Math.max(0, currentWallet - addedVal);
+        ? currentMonthWallet + addedVal 
+        : Math.max(0, currentMonthWallet - addedVal);
+
+      const updatedMonthlyWallets = {
+        ...existingMonthlyWallets,
+        [viewingMonthKey]: newBal
+      };
+
+      const now = new Date();
+      const isViewingCurrentCalendarMonth = selectedDate.getFullYear() === now.getFullYear() && selectedDate.getMonth() === now.getMonth();
 
       await updateDoc(doc(db, 'users', currentAppUser.id), {
-        walletBalance: newBal,
-        monthlyTarget: targetVal
+        monthlyWallets: updatedMonthlyWallets,
+        monthlyTarget: targetVal,
+        ...(isViewingCurrentCalendarMonth ? { walletBalance: newBal } : {})
       });
 
       // LOG AUDIT HISTORY
@@ -852,26 +888,27 @@ export default function DashboardTab() {
           entityId: currentAppUser.id,
           entityType: 'wallet_adjustment',
           action: 'updated',
-          itemName: `${currentAppUser.name}'s Wallet ${walletOperation === 'add' ? 'Added (+)' : 'Subtracted (-)'}`,
+          itemName: `${currentAppUser.name}'s Wallet ${walletOperation === 'add' ? 'Added (+)' : 'Subtracted (-)'} for ${viewingMonthKey}`,
           userId: currentAppUser.id,
           userName: currentAppUser.name,
-          previousData: { walletBalance: currentWallet },
-          newData: { walletBalance: newBal, operation: walletOperation, amount: addedVal }
+          previousData: { walletBalance: currentMonthWallet, monthKey: viewingMonthKey },
+          newData: { walletBalance: newBal, operation: walletOperation, amount: addedVal, monthKey: viewingMonthKey }
         });
 
         // PUSH REAL-TIME NOTIFICATION
         const targetTeamId = activeTeamIdStore || currentAppUser.teamId;
         if (targetTeamId) {
           const notifTitle = `Wallet ${walletOperation === 'add' ? 'Added (+)' : 'Subtracted (-)'}`;
-          const notifDesc = `${currentAppUser.name} ${walletOperation === 'add' ? 'added' : 'subtracted'} ${formatAmount(addedVal)} ${walletOperation === 'add' ? 'to' : 'from'} wallet balance.`;
+          const notifDesc = `${currentAppUser.name} ${walletOperation === 'add' ? 'added' : 'subtracted'} ${formatAmount(addedVal)} ${walletOperation === 'add' ? 'to' : 'from'} ${selectedDate.toLocaleDateString('en-US', { month: 'short' })} wallet.`;
           await notificationService.notify(targetTeamId, notifTitle, notifDesc, 'walletUpdates');
         }
       }
 
       setCurrentAppUser({
         ...currentAppUser,
-        walletBalance: newBal,
-        monthlyTarget: targetVal
+        monthlyWallets: updatedMonthlyWallets,
+        monthlyTarget: targetVal,
+        ...(isViewingCurrentCalendarMonth ? { walletBalance: newBal } : {})
       });
 
       setWalletAmountInput('');
@@ -927,22 +964,25 @@ export default function DashboardTab() {
 
   const myShare = useMemo(() => shares[currentAppUser?.id || ''] || 0, [shares, currentAppUser?.id]);
 
+  const viewingMonthKey = useMemo(() => {
+    return `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}`;
+  }, [selectedDate]);
+
   const { myWallet, totalWallet } = useMemo(() => {
-    if (isCurrentMonth) {
-      const mw = currentAppUser?.walletBalance || 0;
-      const tw = members.reduce((sum: number, m: any) => sum + (m.walletBalance || 0), 0);
-      return { myWallet: mw, totalWallet: tw };
-    }
-
-    if (!currentMonthExpenses || currentMonthExpenses.length === 0) {
-      return { myWallet: 0, totalWallet: 0 };
-    }
-
-    return {
-      myWallet: myShare,
-      totalWallet: totalSpending
+    const getMemberMonthWallet = (m: any) => {
+      if (m?.monthlyWallets && m.monthlyWallets[viewingMonthKey] !== undefined) {
+        return m.monthlyWallets[viewingMonthKey];
+      }
+      if (viewingMonthKey === '2026-08' && (!m?.monthlyWallets || Object.keys(m.monthlyWallets).length === 0)) {
+        return m?.walletBalance || 0;
+      }
+      return 0;
     };
-  }, [isCurrentMonth, currentMonthExpenses, currentAppUser?.walletBalance, members, myShare, totalSpending]);
+
+    const mw = getMemberMonthWallet(currentAppUser);
+    const tw = members.reduce((sum: number, m: any) => sum + getMemberMonthWallet(m), 0);
+    return { myWallet: mw, totalWallet: tw };
+  }, [viewingMonthKey, currentAppUser, members]);
 
   // Selected date attendance states
   const selectedDateStr = useMemo(() => selectedDate.toISOString().substring(0, 10), [selectedDate]);
@@ -1196,6 +1236,13 @@ export default function DashboardTab() {
             </TouchableOpacity>
           </View>
           <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={[styles.iconBtn, { marginRight: 8 }]} 
+              onPress={() => setTutorialModalVisible(true)} 
+              activeOpacity={0.75}
+            >
+              <Ionicons name="book-outline" size={20} color={colors.textPrimary} />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn} onPress={handleOpenNotifications} activeOpacity={0.75}>
               <Ionicons name="notifications-outline" size={21} color={colors.textPrimary} />
               {unreadNotifCount > 0 && (
@@ -1334,6 +1381,52 @@ export default function DashboardTab() {
             </View>
           </View>
         </View>
+
+        {/* Money Circle Button Card */}
+        {currentAppUser?.teamId && members.length > 1 && (
+          <TouchableOpacity
+            style={styles.moneyCircleBtnCard}
+            onPress={() => navigation.navigate('MoneyCircle')}
+            activeOpacity={0.82}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <View style={styles.moneyCircleIconBadge}>
+                <Ionicons name="repeat" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.loanQuickTitle}>Money Circle</Text>
+                  <View style={styles.loanPrivateTag}>
+                    <Ionicons name="lock-closed" size={9} color={colors.textSecondary} />
+                    <Text style={styles.loanPrivateTagText}>Private</Text>
+                  </View>
+                </View>
+                <Text style={styles.loanQuickSubDesc}>Give & Borrow personal ledger</Text>
+              </View>
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {loanSummary.netBalance !== 0 && (
+                <View style={[
+                  styles.loanSummaryPill, 
+                  { backgroundColor: loanSummary.netBalance > 0 ? colors.financial.walletDepositLight : colors.financial.spentLight }
+                ]}>
+                  <Text style={[
+                    styles.loanSummaryPillText,
+                    { color: loanSummary.netBalance > 0 ? colors.financial.walletDeposit : colors.financial.spent }
+                  ]}>
+                    {loanSummary.netBalance > 0 
+                      ? `+${currency} ${loanSummary.netBalance.toLocaleString()}` 
+                      : `-${currency} ${Math.abs(loanSummary.netBalance).toLocaleString()}`}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.openCircleBtnCircle}>
+                <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+              </View>
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* Week Calendar */}
         {renderCalendar()}
@@ -2131,6 +2224,35 @@ export default function DashboardTab() {
           </View>
         </View>
       </Modal>
+
+      {/* App Tutorial Modal */}
+      <AppTutorialModal
+        visible={tutorialModalVisible}
+        onClose={() => setTutorialModalVisible(false)}
+        modalBottomPadding={modalBottomPadding}
+      />
+
+      {/* Personal Loan (Khata) Modal */}
+      <LoanModal
+        visible={loanModalVisible}
+        onClose={() => setLoanModalVisible(false)}
+        members={members}
+        currentAppUser={currentAppUser}
+        currency={currency}
+        darkMode={darkMode}
+        initialType={loanModalInitialType}
+        onSaveLoan={async (loanData) => {
+          const newL = await loanService.addLoan(loanData);
+          setPersonalLoans(prev => [newL, ...prev]);
+          Alert.alert(
+            'Recorded Successfully',
+            loanData.lenderId === currentAppUser?.id
+              ? `Personal loan of ${currency} ${loanData.amount.toLocaleString()} given to ${loanData.borrowerName}.`
+              : `Personal loan of ${currency} ${loanData.amount.toLocaleString()} borrowed from ${loanData.lenderName}.`
+          );
+        }}
+        existingLoans={personalLoans}
+      />
     </SafeAreaView>
   );
 }
@@ -2471,6 +2593,139 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
     fontSize: 9,
     color: colors.textSecondary,
     marginVertical: 1,
+  },
+  moneyCircleBtnCard: {
+    backgroundColor: colors.cardBg,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  moneyCircleIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: colors.primary + '18',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  loanIconBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: colors.primary + '18',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loanQuickTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  loanQuickSubDesc: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  loanPrivateTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.inputBg,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 3,
+  },
+  loanPrivateTagText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  loanSummaryPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  loanSummaryPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  openCircleBtnCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary + '18',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loanActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  giveLoanBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.financial.walletDepositLight,
+    borderWidth: 1.5,
+    borderColor: colors.financial.walletDeposit,
+    borderRadius: 13,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+  },
+  loanBtnIconCircleGreen: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.financial.walletDeposit,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  giveLoanBtnTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: colors.financial.walletDeposit,
+  },
+  loanBtnSubtitle: {
+    fontSize: 9.5,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  borrowLoanBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.financial.spentLight,
+    borderWidth: 1.5,
+    borderColor: colors.financial.spent,
+    borderRadius: 13,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+  },
+  loanBtnIconCircleRed: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.financial.spent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  borrowLoanBtnTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: colors.financial.spent,
   },
   calendarContainer: {
     backgroundColor: colors.cardBg,

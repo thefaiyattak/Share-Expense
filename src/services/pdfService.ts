@@ -13,6 +13,7 @@ export const pdfService = {
     currency?: string;
     targetUserId?: string;
     skipShare?: boolean;
+    monthKey?: string;
   }): Promise<string> => {
     const currency = params.currency || 'PKR';
     
@@ -30,18 +31,30 @@ export const pdfService = {
     const formatter = new Intl.NumberFormat('en-PK', { maximumFractionDigits: 0 });
     const formatAmt = (num: number) => `${currency} ${formatter.format(num)}`;
 
+    const currentKey = params.monthKey || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    const getUserMonthWallet = (u: AppUser) => {
+      if (u?.monthlyWallets && u.monthlyWallets[currentKey] !== undefined) {
+        return u.monthlyWallets[currentKey];
+      }
+      if (currentKey === '2026-08' && (!u?.monthlyWallets || Object.keys(u.monthlyWallets).length === 0)) {
+        return u.walletBalance || 0;
+      }
+      return 0;
+    };
+
     // Build Members Table HTML
     let membersRows = '';
     filteredUsers.forEach((u) => {
       const spent = filteredExpenses
         .filter((e) => e.userId === u.id)
         .reduce((sum, e) => sum + ((Number(e.price) || 0) * (parseFloat(e.quantity) || 1)), 0);
-      const balance = u.walletBalance - spent;
+      const userWallet = getUserMonthWallet(u);
+      const balance = userWallet - spent;
       membersRows += `
         <tr>
           <td>${u.name}</td>
           <td>${formatAmt(spent)}</td>
-          <td>${formatAmt(u.walletBalance)}</td>
+          <td>${formatAmt(userWallet)}</td>
           <td style="color: ${balance < 0 ? '#E53935' : '#2E7D32'}">${formatAmt(balance)}</td>
         </tr>
       `;
@@ -204,6 +217,39 @@ export const pdfService = {
             </thead>
             <tbody>
               ${membersRows}
+            </tbody>
+          </table>
+
+          <h3>Settlement Summary (Option 1: Wallet Pool Refund)</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Deposit + Spent</th>
+                <th>Share</th>
+                <th>Net Settlement</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredUsers.map(u => {
+                const spent = filteredExpenses
+                  .filter((e) => e.userId === u.id)
+                  .reduce((sum, e) => sum + ((Number(e.price) || 0) * (parseFloat(e.quantity) || 1)), 0);
+                const userWallet = getUserMonthWallet(u);
+                const totalContributed = userWallet + spent;
+                const net = totalContributed - Math.round(total / (filteredUsers.length || 1));
+                const isPos = net >= 0;
+                return `
+                  <tr>
+                    <td><strong>${u.name}</strong></td>
+                    <td>${formatAmt(totalContributed)} (${formatAmt(userWallet)} + ${formatAmt(spent)})</td>
+                    <td>${formatAmt(Math.round(total / (filteredUsers.length || 1)))}</td>
+                    <td style="color: ${isPos ? '#2E7D32' : '#E53935'}; font-weight: bold;">
+                      ${isPos ? 'Receives +' : 'Owes -'}${formatAmt(Math.abs(net))}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         ` : ''}
