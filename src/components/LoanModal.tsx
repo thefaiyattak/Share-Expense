@@ -190,8 +190,7 @@ export default function LoanModal({
                 <TextInput
                   style={[styles.heroAmountInput, { color: colors.textPrimary }]}
                   keyboardType="numeric"
-                  placeholder="0"
-                  placeholderTextColor={colors.textTertiary}
+                  placeholder=""
                   value={amount}
                   onChangeText={setAmount}
                   autoFocus={true}
@@ -340,8 +339,8 @@ export default function LoanModal({
               {saving
                 ? 'Recording...'
                 : isGive
-                ? `Confirm Lent (${currency} ${amount ? parseFloat(amount || '0').toLocaleString() : '0'})`
-                : `Confirm Borrowed (${currency} ${amount ? parseFloat(amount || '0').toLocaleString() : '0'})`}
+                ? (amount && parseFloat(amount) > 0 ? `Confirm Lent (${currency} ${parseFloat(amount).toLocaleString()})` : 'Confirm Lent')
+                : (amount && parseFloat(amount) > 0 ? `Confirm Borrowed (${currency} ${parseFloat(amount).toLocaleString()})` : 'Confirm Borrowed')}
             </Text>
           </TouchableOpacity>
         </View>
