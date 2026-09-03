@@ -158,13 +158,18 @@ export default function MoneyCircleScreen() {
       >
         {/* Hero Card: Overall Money Circle Position */}
         <View style={styles.heroCard}>
-          <Text style={styles.heroSub}>Net Personal Balance</Text>
+          <View style={styles.heroHeaderBadge}>
+            <Ionicons name="repeat" size={13} color={colors.primary} />
+            <Text style={styles.heroSub}>NET PERSONAL CIRCLE BALANCE</Text>
+          </View>
+
           <Text style={[
             styles.heroAmount,
             { color: summary.netBalance > 0 ? colors.financial.walletDeposit : summary.netBalance < 0 ? colors.financial.spent : colors.textPrimary }
           ]}>
             {summary.netBalance > 0 ? `+${formatAmt(summary.netBalance)}` : summary.netBalance < 0 ? `-${formatAmt(summary.netBalance)}` : `${currency} 0`}
           </Text>
+
           <Text style={styles.heroStatusDesc}>
             {summary.netBalance > 0
               ? 'You are owed more overall across your circle.'
@@ -173,25 +178,34 @@ export default function MoneyCircleScreen() {
               : 'All circle accounts are settled.'}
           </Text>
 
+          {/* Mini Cards Row for To Collect / To Pay */}
           <View style={styles.heroStatsRow}>
-            <View style={styles.heroStatItem}>
-              <View style={styles.heroStatBadgeGreen}>
-                <Ionicons name="arrow-up" size={12} color={colors.financial.walletDeposit} />
-                <Text style={styles.heroStatBadgeTextGreen}>To Collect</Text>
+            {/* To Collect Box */}
+            <View style={[styles.heroStatBox, { backgroundColor: colors.primaryLight }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                <View style={[styles.miniBadgeCircle, { backgroundColor: colors.primary }]}>
+                  <Ionicons name="arrow-up" size={11} color="#FFFFFF" />
+                </View>
+                <Text style={[styles.heroStatBoxLabel, { color: colors.primaryDark }]}>
+                  TO COLLECT
+                </Text>
               </View>
-              <Text style={[styles.heroStatValue, { color: colors.financial.walletDeposit }]}>
+              <Text style={[styles.heroStatValue, { color: colors.primaryDark }]}>
                 {formatAmt(summary.toCollect)}
               </Text>
             </View>
 
-            <View style={styles.heroStatDivider} />
-
-            <View style={styles.heroStatItem}>
-              <View style={styles.heroStatBadgeRed}>
-                <Ionicons name="arrow-down" size={12} color={colors.financial.spent} />
-                <Text style={styles.heroStatBadgeTextRed}>To Pay</Text>
+            {/* To Pay Box */}
+            <View style={[styles.heroStatBox, { backgroundColor: '#FFEBEE' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                <View style={[styles.miniBadgeCircle, { backgroundColor: colors.error }]}>
+                  <Ionicons name="arrow-down" size={11} color="#FFFFFF" />
+                </View>
+                <Text style={[styles.heroStatBoxLabel, { color: colors.error }]}>
+                  TO PAY
+                </Text>
               </View>
-              <Text style={[styles.heroStatValue, { color: colors.financial.spent }]}>
+              <Text style={[styles.heroStatValue, { color: colors.error }]}>
                 {formatAmt(summary.toPay)}
               </Text>
             </View>
@@ -212,10 +226,11 @@ export default function MoneyCircleScreen() {
             <View style={styles.actionIconCircleGreen}>
               <Ionicons name="arrow-up" size={16} color="#FFFFFF" />
             </View>
-            <View style={{ marginLeft: 10 }}>
+            <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={styles.giveBtnTitle}>Lent (Give)</Text>
               <Text style={styles.actionBtnSub}>You gave money</Text>
             </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.primary} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -230,10 +245,11 @@ export default function MoneyCircleScreen() {
             <View style={styles.actionIconCircleRed}>
               <Ionicons name="arrow-down" size={16} color="#FFFFFF" />
             </View>
-            <View style={{ marginLeft: 10 }}>
+            <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={styles.borrowBtnTitle}>Borrow (Take)</Text>
               <Text style={styles.actionBtnSub}>You took money</Text>
             </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.error} />
           </TouchableOpacity>
         </View>
 
@@ -464,30 +480,38 @@ const getStyles = (colors: any, darkMode: boolean) =>
     },
     heroCard: {
       backgroundColor: colors.cardBg,
-      borderRadius: 22,
+      borderRadius: 24,
       padding: 20,
       alignItems: 'center',
       borderWidth: 1,
       borderColor: colors.border,
       marginBottom: 16,
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.06,
-      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.07,
+      shadowRadius: 14,
       elevation: 3,
     },
+    heroHeaderBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.primary + '14',
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 12,
+      marginBottom: 10,
+    },
     heroSub: {
-      fontSize: 11.5,
-      fontWeight: '700',
-      color: colors.textSecondary,
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
-      marginBottom: 6,
+      fontSize: 10.5,
+      fontWeight: '800',
+      color: colors.primary,
+      letterSpacing: 0.6,
     },
     heroAmount: {
-      fontSize: 32,
+      fontSize: 34,
       fontWeight: '900',
-      letterSpacing: -0.5,
+      letterSpacing: -0.8,
       marginBottom: 4,
     },
     heroStatusDesc: {
@@ -495,120 +519,99 @@ const getStyles = (colors: any, darkMode: boolean) =>
       color: colors.textSecondary,
       textAlign: 'center',
       marginBottom: 16,
+      lineHeight: 16,
     },
     heroStatsRow: {
       flexDirection: 'row',
       alignItems: 'center',
       width: '100%',
-      paddingTop: 14,
-      borderTopWidth: 1,
-      borderTopColor: colors.divider,
+      gap: 10,
     },
-    heroStatItem: {
+    heroStatBox: {
       flex: 1,
+      borderRadius: 16,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
       alignItems: 'center',
     },
-    heroStatDivider: {
-      width: 1,
-      height: 28,
-      backgroundColor: colors.divider,
-    },
-    heroStatBadgeGreen: {
-      flexDirection: 'row',
+    miniBadgeCircle: {
+      width: 16,
+      height: 16,
+      borderRadius: 8,
       alignItems: 'center',
-      gap: 4,
-      backgroundColor: colors.financial.walletDepositLight,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: 6,
-      marginBottom: 4,
+      justifyContent: 'center',
     },
-    heroStatBadgeTextGreen: {
-      fontSize: 10.5,
-      fontWeight: '800',
-      color: colors.financial.walletDeposit,
-    },
-    heroStatBadgeRed: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      backgroundColor: colors.financial.spentLight,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: 6,
-      marginBottom: 4,
-    },
-    heroStatBadgeTextRed: {
-      fontSize: 10.5,
-      fontWeight: '800',
-      color: colors.financial.spent,
+    heroStatBoxLabel: {
+      fontSize: 10,
+      fontWeight: '900',
+      letterSpacing: 0.5,
     },
     heroStatValue: {
-      fontSize: 16,
+      fontSize: 17,
       fontWeight: '900',
     },
     actionRow: {
       flexDirection: 'row',
-      gap: 12,
+      gap: 10,
       marginBottom: 20,
     },
     giveBtn: {
       flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: colors.financial.walletDepositLight,
+      backgroundColor: colors.primaryLight,
       borderWidth: 1.5,
-      borderColor: colors.financial.walletDeposit,
-      borderRadius: 16,
-      paddingVertical: 12,
+      borderColor: colors.primary,
+      borderRadius: 18,
+      paddingVertical: 13,
       paddingHorizontal: 14,
-      shadowColor: colors.financial.walletDeposit,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.12,
+      shadowRadius: 6,
       elevation: 2,
     },
     actionIconCircleGreen: {
       width: 32,
       height: 32,
       borderRadius: 16,
-      backgroundColor: colors.financial.walletDeposit,
+      backgroundColor: colors.primary,
       alignItems: 'center',
       justifyContent: 'center',
     },
     giveBtnTitle: {
       fontSize: 13.5,
       fontWeight: '800',
-      color: colors.financial.walletDeposit,
+      color: colors.primaryDark,
     },
     borrowBtn: {
       flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: colors.financial.spentLight,
+      backgroundColor: '#FFEBEE',
       borderWidth: 1.5,
-      borderColor: colors.financial.spent,
-      borderRadius: 16,
-      paddingVertical: 12,
+      borderColor: colors.error,
+      borderRadius: 18,
+      paddingVertical: 13,
       paddingHorizontal: 14,
-      shadowColor: colors.financial.spent,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
+      shadowColor: colors.error,
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.12,
+      shadowRadius: 6,
       elevation: 2,
     },
     actionIconCircleRed: {
       width: 32,
       height: 32,
       borderRadius: 16,
-      backgroundColor: colors.financial.spent,
+      backgroundColor: colors.error,
       alignItems: 'center',
       justifyContent: 'center',
     },
     borrowBtnTitle: {
       fontSize: 13.5,
       fontWeight: '800',
-      color: colors.financial.spent,
+      color: colors.error,
     },
     actionBtnSub: {
       fontSize: 10,

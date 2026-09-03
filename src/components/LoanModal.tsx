@@ -135,10 +135,10 @@ export default function LoanModal({
   };
 
   const isGive = loanType === 'give';
-  // Give (Lent) = Green (Wallet Deposit theme color), Borrow = Red (Spent/Deficit theme color)
-  const activeColor = isGive ? colors.financial.walletDeposit : colors.financial.spent;
-  const activeBg = isGive ? colors.financial.walletDepositLight : colors.financial.spentLight;
-  const activeBorder = isGive ? colors.financial.walletDeposit : colors.financial.spent;
+  // Use app UI theme primary (#4CAF50) and error (#D32F2F)
+  const activeColor = isGive ? colors.primary : colors.error;
+  const activeBg = isGive ? colors.primaryLight : '#FFEBEE';
+  const activeBorder = isGive ? colors.primary : colors.error;
 
   return (
     <Modal
@@ -157,16 +157,21 @@ export default function LoanModal({
           {/* Modal Header */}
           <View style={styles.modalHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={[styles.headerBadge, { backgroundColor: activeBg, borderColor: activeBorder }]}>
+              <View style={[styles.headerBadge, { backgroundColor: activeBg, borderColor: activeColor + '40' }]}>
                 <Ionicons
-                  name={isGive ? 'arrow-up-circle' : 'arrow-down-circle'}
+                  name={isGive ? 'arrow-up' : 'arrow-down'}
                   size={20}
                   color={activeColor}
                 />
               </View>
               <View style={{ marginLeft: 12 }}>
-                <Text style={styles.modalTitle}>Money Circle</Text>
-                <Text style={styles.modalSubtitle}>Strictly private between you and the member</Text>
+                <Text style={styles.modalTitle}>
+                  {isGive ? 'Lend Money' : 'Borrow Money'}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                  <Ionicons name="lock-closed" size={10} color={colors.textSecondary} />
+                  <Text style={styles.modalSubtitle}>Private · Visible only to both members</Text>
+                </View>
               </View>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -175,9 +180,28 @@ export default function LoanModal({
           </View>
 
           <ScrollView style={{ width: '100%' }} showsVerticalScrollIndicator={false}>
+            {/* Amount Hero Card */}
+            <View style={[styles.amountHeroCard, { borderColor: activeColor + '35' }]}>
+              <Text style={styles.amountHeroLabel}>
+                {isGive ? 'YOU ARE LENDING' : 'YOU ARE BORROWING'}
+              </Text>
+              <View style={styles.amountInputRow}>
+                <Text style={[styles.amountCurrencyPrefix, { color: activeColor }]}>{currency}</Text>
+                <TextInput
+                  style={[styles.heroAmountInput, { color: colors.textPrimary }]}
+                  keyboardType="numeric"
+                  placeholder="0"
+                  placeholderTextColor={colors.textTertiary}
+                  value={amount}
+                  onChangeText={setAmount}
+                  autoFocus={true}
+                />
+              </View>
+            </View>
+
             {/* Member Picker */}
             <Text style={styles.fieldLabel}>
-              {isGive ? 'WHO DID YOU GIVE MONEY TO?' : 'WHO DID YOU BORROW FROM?'}
+              {isGive ? 'LEND TO WHOM?' : 'BORROW FROM WHOM?'}
             </Text>
             <ScrollView
               horizontal
@@ -192,13 +216,23 @@ export default function LoanModal({
                     key={m.id}
                     style={[
                       styles.memberChip,
-                      isSelected && { borderColor: activeColor, backgroundColor: activeBg },
+                      isSelected && { 
+                        borderColor: activeColor, 
+                        backgroundColor: activeBg,
+                        shadowColor: activeColor,
+                        shadowOpacity: 0.15,
+                        shadowRadius: 6,
+                        elevation: 2,
+                      },
                     ]}
                     onPress={() => setSelectedMemberId(m.id)}
                     activeOpacity={0.8}
                   >
-                    <View style={[styles.memberAvatar, { backgroundColor: isSelected ? activeColor : colors.primary + '20' }]}>
-                      <Text style={[styles.memberAvatarText, { color: isSelected ? '#FFFFFF' : colors.primary }]}>
+                    <View style={[
+                      styles.memberAvatar, 
+                      { backgroundColor: isSelected ? activeColor : colors.inputBg }
+                    ]}>
+                      <Text style={[styles.memberAvatarText, { color: isSelected ? '#FFFFFF' : colors.textPrimary }]}>
                         {initials}
                       </Text>
                     </View>
@@ -211,28 +245,34 @@ export default function LoanModal({
                     >
                       {m.name}
                     </Text>
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={15} color={activeColor} style={{ marginLeft: 4 }} />
+                    )}
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
 
-            {/* Current Balance Banner with selected member */}
+            {/* Current Balance Ledger Pill */}
             {selectedMember && currentNetBalanceWithSelected !== 0 && (
               <View style={[
                 styles.balancePill, 
-                { backgroundColor: currentNetBalanceWithSelected > 0 ? colors.financial.walletDepositLight : colors.financial.spentLight }
+                { 
+                  backgroundColor: currentNetBalanceWithSelected > 0 ? colors.financial.walletDepositLight : colors.financial.spentLight,
+                  borderColor: (currentNetBalanceWithSelected > 0 ? colors.financial.walletDeposit : colors.financial.spent) + '30'
+                }
               ]}>
                 <Ionicons
-                  name="information-circle-outline"
+                  name="swap-horizontal"
                   size={15}
                   color={currentNetBalanceWithSelected > 0 ? colors.financial.walletDeposit : colors.financial.spent}
-                  style={{ marginRight: 6 }}
+                  style={{ marginRight: 8 }}
                 />
                 <Text style={[
                   styles.balancePillText, 
                   { color: currentNetBalanceWithSelected > 0 ? colors.financial.walletDeposit : colors.financial.spent }
                 ]}>
-                  Current ledger:{' '}
+                  Ledger:{' '}
                   <Text style={{ fontWeight: '800' }}>
                     {currentNetBalanceWithSelected > 0
                       ? `${selectedMember.name} owes you ${currency} ${currentNetBalanceWithSelected.toLocaleString()}`
@@ -242,57 +282,44 @@ export default function LoanModal({
               </View>
             )}
 
-            {/* Amount Field */}
-            <Text style={styles.fieldLabel}>AMOUNT ({currency})</Text>
-            <View style={[styles.inputBox, { borderColor: activeColor + '60' }]}>
-              <Text style={[styles.currencyPrefix, { color: activeColor }]}>{currency}</Text>
-              <TextInput
-                style={styles.amountInput}
-                keyboardType="numeric"
-                placeholder="0"
-                placeholderTextColor={colors.textTertiary}
-                value={amount}
-                onChangeText={setAmount}
-                autoFocus={false}
-              />
-            </View>
-
-            {/* Date and Note Row */}
-            <View style={styles.rowTwo}>
+            {/* Details Card (Date & Note) */}
+            <View style={styles.detailsCard}>
               {/* Date button */}
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={styles.fieldLabel}>DATE</Text>
-                <TouchableOpacity
-                  style={styles.datePickerBtn}
-                  onPress={() => setDatePickerVisible(true)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="calendar-outline" size={15} color={colors.primary} style={{ marginRight: 6 }} />
+              <TouchableOpacity
+                style={styles.datePickerBtn}
+                onPress={() => setDatePickerVisible(true)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.detailIconCircle}>
+                  <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.detailMiniLabel}>DATE</Text>
                   <Text style={styles.dateText}>
                     {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </Text>
-                </TouchableOpacity>
-              </View>
+                </View>
+                <Ionicons name="chevron-down" size={14} color={colors.textTertiary} />
+              </TouchableOpacity>
+
+              <View style={styles.detailDivider} />
 
               {/* Note input */}
-              <View style={{ flex: 1.5 }}>
-                <Text style={styles.fieldLabel}>NOTE (OPTIONAL)</Text>
-                <TextInput
-                  style={styles.noteInput}
-                  placeholder="e.g. Travel loan"
-                  placeholderTextColor={colors.textTertiary}
-                  value={note}
-                  onChangeText={setNote}
-                />
+              <View style={styles.noteRow}>
+                <View style={styles.detailIconCircle}>
+                  <Ionicons name="document-text-outline" size={16} color={colors.textSecondary} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.detailMiniLabel}>NOTE (OPTIONAL)</Text>
+                  <TextInput
+                    style={styles.noteInput}
+                    placeholder="e.g. Travel loan, food split"
+                    placeholderTextColor={colors.textTertiary}
+                    value={note}
+                    onChangeText={setNote}
+                  />
+                </View>
               </View>
-            </View>
-
-            {/* Privacy Guarantee Pill */}
-            <View style={styles.privacyGuarantee}>
-              <Ionicons name="lock-closed" size={13} color={colors.textSecondary} style={{ marginRight: 6 }} />
-              <Text style={styles.privacyGuaranteeText}>
-                Visible only to you and <Text style={{ fontWeight: '700' }}>{selectedMember?.name || 'the recipient'}</Text>.
-              </Text>
             </View>
           </ScrollView>
 
@@ -304,7 +331,7 @@ export default function LoanModal({
             activeOpacity={0.85}
           >
             <Ionicons
-              name={isGive ? 'checkmark-circle' : 'checkmark-circle'}
+              name={isGive ? 'arrow-up' : 'arrow-down'}
               size={18}
               color="#FFFFFF"
               style={{ marginRight: 8 }}
@@ -313,8 +340,8 @@ export default function LoanModal({
               {saving
                 ? 'Recording...'
                 : isGive
-                ? `Confirm Lent (${currency} ${amount || '0'})`
-                : `Confirm Borrowed (${currency} ${amount || '0'})`}
+                ? `Confirm Lent (${currency} ${amount ? parseFloat(amount || '0').toLocaleString() : '0'})`
+                : `Confirm Borrowed (${currency} ${amount ? parseFloat(amount || '0').toLocaleString() : '0'})`}
             </Text>
           </TouchableOpacity>
         </View>
@@ -438,95 +465,125 @@ const getStyles = (colors: any, darkMode: boolean) =>
     balancePill: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 14,
       marginTop: 10,
       marginBottom: 6,
+      borderWidth: 1,
     },
     balancePillText: {
-      fontSize: 11.5,
+      fontSize: 12,
       flex: 1,
     },
-    inputBox: {
-      flexDirection: 'row',
+    amountHeroCard: {
+      backgroundColor: colors.cardBg,
+      borderRadius: 20,
+      paddingHorizontal: 18,
+      paddingVertical: 16,
       alignItems: 'center',
-      backgroundColor: colors.inputBg,
-      borderRadius: 16,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
       borderWidth: 1.5,
-      marginBottom: 10,
+      marginBottom: 16,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.05,
+      shadowRadius: 8,
+      elevation: 2,
     },
-    currencyPrefix: {
-      fontSize: 18,
+    amountHeroLabel: {
+      fontSize: 10.5,
       fontWeight: '800',
-      marginRight: 8,
+      color: colors.textTertiary,
+      letterSpacing: 0.8,
+      marginBottom: 6,
     },
-    amountInput: {
-      flex: 1,
-      fontSize: 22,
-      fontWeight: '800',
-      color: colors.textPrimary,
-      padding: 0,
-    },
-    rowTwo: {
+    amountInputRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
+    },
+    amountCurrencyPrefix: {
+      fontSize: 26,
+      fontWeight: '900',
+      marginRight: 6,
+    },
+    heroAmountInput: {
+      fontSize: 36,
+      fontWeight: '900',
+      letterSpacing: -0.5,
+      padding: 0,
+      minWidth: 70,
+      textAlign: 'center',
+    },
+    detailsCard: {
+      backgroundColor: colors.cardBg,
+      borderRadius: 18,
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginTop: 12,
       marginBottom: 12,
     },
     datePickerBtn: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: colors.inputBg,
-      borderRadius: 12,
-      paddingHorizontal: 10,
       paddingVertical: 10,
-      borderWidth: 1,
-      borderColor: colors.border,
     },
-    dateText: {
-      fontSize: 12,
-      fontWeight: '700',
-      color: colors.textPrimary,
-    },
-    noteInput: {
+    detailIconCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: 10,
       backgroundColor: colors.inputBg,
-      borderRadius: 12,
-      paddingHorizontal: 12,
-      paddingVertical: 9,
-      borderWidth: 1,
-      borderColor: colors.border,
-      fontSize: 12.5,
-      color: colors.textPrimary,
-    },
-    privacyGuarantee: {
-      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 8,
-      marginBottom: 10,
     },
-    privacyGuaranteeText: {
-      fontSize: 11.5,
-      color: colors.textSecondary,
+    detailMiniLabel: {
+      fontSize: 9.5,
+      fontWeight: '800',
+      color: colors.textTertiary,
+      letterSpacing: 0.5,
+    },
+    dateText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textPrimary,
+      marginTop: 2,
+    },
+    detailDivider: {
+      height: 1,
+      backgroundColor: colors.divider,
+      marginHorizontal: 4,
+    },
+    noteRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+    },
+    noteInput: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.textPrimary,
+      padding: 0,
+      marginTop: 2,
     },
     saveBtn: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       width: '100%',
-      paddingVertical: 14,
-      borderRadius: 16,
-      marginTop: 8,
-      shadowOffset: { width: 0, height: 3 },
-      shadowOpacity: 0.3,
-      shadowRadius: 5,
-      elevation: 3,
+      paddingVertical: 15,
+      borderRadius: 18,
+      marginTop: 10,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 8,
+      elevation: 4,
     },
     saveBtnText: {
       color: '#FFFFFF',
-      fontSize: 15,
+      fontSize: 16,
       fontWeight: '800',
+      letterSpacing: 0.2,
     },
   });
