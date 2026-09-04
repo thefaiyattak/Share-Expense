@@ -15,7 +15,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
-  Image
+  Image,
+  UIManager,
+  LayoutAnimation
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStore } from '../../store/useStore';
@@ -33,9 +35,15 @@ import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
 import AppTutorialModal from '../../components/AppTutorialModal';
 import LoanModal from '../../components/LoanModal';
 import { loanService } from '../../services/loanService';
-import { PersonalLoan } from '../../models/types';
+import { PersonalLoan, Expense } from '../../models/types';
 
 const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental && !(globalThis as any).nativeFabricUIManager && !(globalThis as any).__turboModuleProxy) {
+  try {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+  } catch (e) {}
+}
 
 export default function DashboardTab() {
   const insets = useSafeAreaInsets();
@@ -405,6 +413,16 @@ export default function DashboardTab() {
   const [selectedExpenseToEdit, setSelectedExpenseToEdit] = useState<any>(null);
   const [editSplitUserIds, setEditSplitUserIds] = useState<string[]>([]);
   const [savingSplit, setSavingSplit] = useState(false);
+  const [receiptPreviewUri, setReceiptPreviewUri] = useState<string | null>(null);
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+
+  const toggleCategory = (catKey: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedCategories(prev => ({
+      ...prev,
+      [catKey]: !prev[catKey]
+    }));
+  };
   
   const [newGroupName, setNewGroupName] = useState('');
   const [inviteCodeInput, setInviteCodeInput] = useState('');
@@ -1158,25 +1176,59 @@ export default function DashboardTab() {
     );
   };
 
-  // Grouped category expenses for today/selectedDate
-  const categoryTotalsMap = useMemo(() => {
-    const totals: Record<string, number> = { breakfast: 0, lunch: 0, dinner: 0, utility: 0 };
+  // Helper to reliably parse Date / Firestore Timestamp
+  const parseExpenseDate = (val: any): Date => {
+    if (!val) return new Date();
+    if (val.toDate && typeof val.toDate === 'function') return val.toDate();
+    if (val instanceof Date) return val;
+    return new Date(val);
+  };
+
+  // Expenses specifically on selectedDate
+  const selectedDateExpenses = useMemo(() => {
     const selDay = selectedDate.getDate();
     const selMonth = selectedDate.getMonth();
     const selYear = selectedDate.getFullYear();
 
-    userVisibleExpenses.forEach(e => {
-      const d = new Date(e.date);
-      if (d.getDate() === selDay && d.getMonth() === selMonth && d.getFullYear() === selYear) {
-        const cat = e.category || 'utility';
-        const price = Number(e.price) || 0;
-        const qty = Number(e.quantity) || 1;
-        totals[cat] = (totals[cat] || 0) + (price * qty);
-      }
+    return userVisibleExpenses.filter(e => {
+      const d = parseExpenseDate(e.date);
+      return d.getDate() === selDay && d.getMonth() === selMonth && d.getFullYear() === selYear;
+    });
+  }, [userVisibleExpenses, selectedDate]);
+
+  // Grouped category expenses for today/selectedDate
+  const categoryTotalsMap = useMemo(() => {
+    const totals: Record<string, number> = { breakfast: 0, lunch: 0, dinner: 0, utility: 0 };
+    selectedDateExpenses.forEach(e => {
+      const rawCat = (e.category || 'utility').toLowerCase();
+      const cat = ['breakfast', 'lunch', 'dinner'].includes(rawCat) ? rawCat : 'utility';
+      const price = Number(e.price) || 0;
+      const qty = parseFloat(e.quantity) || 1;
+      totals[cat] = (totals[cat] || 0) + (price * qty);
     });
 
     return totals;
-  }, [userVisibleExpenses, selectedDate]);
+  }, [selectedDateExpenses]);
+
+  // Map category to list of expenses on selectedDate
+  const categoryExpensesMap = useMemo(() => {
+    const map: Record<string, Expense[]> = { breakfast: [], lunch: [], dinner: [], utility: [] };
+    selectedDateExpenses.forEach(e => {
+      const rawCat = (e.category || 'utility').toLowerCase();
+      const cat = ['breakfast', 'lunch', 'dinner'].includes(rawCat) ? rawCat : 'utility';
+      if (!map[cat]) map[cat] = [];
+      map[cat].push(e);
+    });
+    return map;
+  }, [selectedDateExpenses]);
+
+  const selectedDateTotal = useMemo(() => {
+    return selectedDateExpenses.reduce((sum, e) => {
+      const price = Number(e.price) || 0;
+      const qty = parseFloat(e.quantity) || 1;
+      return sum + (price * qty);
+    }, 0);
+  }, [selectedDateExpenses]);
 
   const getCategoryTotal = (cat: string) => {
     return categoryTotalsMap[cat] || 0;
@@ -1434,31 +1486,153 @@ export default function DashboardTab() {
         {/* Categories list */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Daily Breakdown</Text>
+          {selectedDateTotal > 0 && (
+            <View style={styles.dailyTotalBadge}>
+              <Text style={styles.dailyTotalBadgeText}>Total: {formatAmount(selectedDateTotal)}</Text>
+            </View>
+          )}
         </View>
+
+        {selectedDateExpenses.length === 0 && (
+          <View style={styles.emptyDailyCard}>
+            <Ionicons name="calendar-outline" size={24} color={colors.textTertiary} style={{ marginBottom: 6 }} />
+            <Text style={styles.emptyDailyTitle}>No expenses on this date</Text>
+            <Text style={styles.emptyDailySubtitle}>Tap + on any category below to record a purchase</Text>
+          </View>
+        )}
 
         {mealCategories.map((m) => {
           const categoryTotal = getCategoryTotal(m.key);
+          const catExpenses = categoryExpensesMap[m.key] || [];
+          const isExpanded = !!expandedCategories[m.key];
 
           return (
-            <View key={m.key} style={{ marginBottom: 10 }}>
-              <View style={styles.categoryRow}>
+            <View key={m.key} style={styles.categoryCard}>
+              <TouchableOpacity 
+                style={styles.categoryRow}
+                activeOpacity={0.7}
+                onPress={() => toggleCategory(m.key)}
+              >
                 <View style={styles.catIconBox}>
                   <Ionicons name={m.icon as any} size={20} color={colors.primary} />
                 </View>
                 <View style={styles.catInfo}>
-                  <Text style={styles.catName}>{m.name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={styles.catName}>{m.name}</Text>
+                    {catExpenses.length > 0 && (
+                      <View style={styles.itemCountBadge}>
+                        <Text style={styles.itemCountBadgeText}>
+                          {catExpenses.length} {catExpenses.length === 1 ? 'item' : 'items'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={styles.catSpent}>{formatAmount(categoryTotal)}</Text>
                 </View>
-                <TouchableOpacity 
-                  style={styles.addBtn}
-                  onPress={() => navigation.navigate('AddExpense', { 
-                    defaultCategory: m.key,
-                    selectedDate: selectedDate.toISOString()
-                  })}
-                >
-                  <Ionicons name="add" size={18} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
+
+                {/* Actions: Add Expense (+) & Dropdown Button */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity 
+                    style={styles.addBtn}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      navigation.navigate('AddExpense', { 
+                        defaultCategory: m.key,
+                        selectedDate: selectedDate.toISOString()
+                      });
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add" size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[
+                      styles.dropdownBtn, 
+                      isExpanded && styles.dropdownBtnActive
+                    ]}
+                    onPress={() => toggleCategory(m.key)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons 
+                      name={isExpanded ? "chevron-up" : "chevron-down"} 
+                      size={16} 
+                      color={isExpanded ? colors.primaryDark : colors.textSecondary} 
+                    />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+
+              {/* Items List for this category on selectedDate when expanded */}
+              {isExpanded && (
+                <View style={styles.categoryItemsContainer}>
+                  {catExpenses.length > 0 ? (
+                    catExpenses.map((exp, idx) => {
+                      const itemTotal = (Number(exp.price) || 0) * (parseFloat(exp.quantity) || 1);
+                      return (
+                        <TouchableOpacity
+                          key={exp.id || `exp-${idx}`}
+                          style={[styles.dailyBreakdownItemRow, idx > 0 && styles.dailyBreakdownItemRowBorder]}
+                          activeOpacity={0.7}
+                          onPress={() => openEditSplitModal(exp)}
+                        >
+                          <View style={styles.dailyItemMainCol}>
+                            <View style={styles.dailyItemTitleRow}>
+                              <Text style={styles.dailyItemName} numberOfLines={1}>
+                                {exp.itemName}
+                              </Text>
+                              {exp.quantity && exp.quantity !== '1' && (
+                                <View style={styles.dailyItemQtyBadge}>
+                                  <Text style={styles.dailyItemQtyText}>x{exp.quantity}</Text>
+                                </View>
+                              )}
+                            </View>
+
+                            <View style={styles.dailyItemMetaRow}>
+                              <Ionicons name="person-circle-outline" size={13} color={colors.primary} style={{ marginRight: 4 }} />
+                              <Text style={styles.dailyItemBuyer} numberOfLines={1}>
+                                {exp.userName || 'Member'}
+                              </Text>
+                              {exp.receiptImageUrl && (
+                                <TouchableOpacity
+                                  onPress={(e) => {
+                                    e.stopPropagation();
+                                    setReceiptPreviewUri(exp.receiptImageUrl!);
+                                  }}
+                                  style={styles.dailyItemReceiptTag}
+                                >
+                                  <Ionicons name="receipt-outline" size={10} color={colors.primary} style={{ marginRight: 2 }} />
+                                  <Text style={styles.dailyItemReceiptText}>Receipt</Text>
+                                </TouchableOpacity>
+                              )}
+                              {exp.isEdited && (
+                                <Text style={styles.dailyItemEditedText}>· Edited</Text>
+                              )}
+                            </View>
+                          </View>
+
+                          <View style={styles.dailyItemRightCol}>
+                            <Text style={styles.dailyItemPrice}>{formatAmount(itemTotal)}</Text>
+                            <View style={styles.dailyItemSplitInfo}>
+                              <Ionicons name="people-outline" size={11} color={colors.textTertiary} style={{ marginRight: 3 }} />
+                              <Text style={styles.dailyItemSplitText}>
+                                {exp.splitUserIds && exp.splitUserIds.length > 0 ? `${exp.splitUserIds.length} split` : 'All'}
+                              </Text>
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })
+                  ) : (
+                    <View style={styles.emptyCatContainer}>
+                      <Ionicons name="information-circle-outline" size={15} color={colors.textTertiary} style={{ marginRight: 6 }} />
+                      <Text style={styles.emptyCatText}>No items purchased for {m.name.toLowerCase()} on this date.</Text>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
           );
         })}
@@ -2149,6 +2323,31 @@ export default function DashboardTab() {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* Receipt Image Preview Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={!!receiptPreviewUri}
+        onRequestClose={() => setReceiptPreviewUri(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' }}>
+          <TouchableOpacity
+            onPress={() => setReceiptPreviewUri(null)}
+            style={{ position: 'absolute', top: 48, right: 20, zIndex: 10, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: 8 }}
+          >
+            <Ionicons name="close" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+          <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '600', position: 'absolute', top: 54, left: 0, right: 0, textAlign: 'center' }}>Receipt Preview</Text>
+          {receiptPreviewUri ? (
+            <Image
+              source={{ uri: receiptPreviewUri }}
+              style={{ width: '90%', height: '75%', borderRadius: 12 }}
+              resizeMode="contain"
+            />
+          ) : null}
+        </View>
+      </Modal>
+
       {/* Welcome & Dashboard Quick Guide Onboarding Modal */}
       <Modal
         animationType="slide"
@@ -2173,7 +2372,7 @@ export default function DashboardTab() {
               {/* Feature Image */}
               <View style={{ width: '100%', height: 340, borderRadius: 16, overflow: 'hidden', backgroundColor: colors.surface, marginBottom: 14, borderWidth: 1, borderColor: colors.border }}>
                 <Image 
-                  source={require('../../../assets/tutorials/01_dashboard_screen.png')} 
+                  source={require('../../../assets/tutorials/01_understand_your_dashboard.png')} 
                   style={{ width: '100%', height: '100%' }} 
                   resizeMode="contain" 
                 />
@@ -2181,12 +2380,12 @@ export default function DashboardTab() {
 
               {/* Title */}
               <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.textPrimary, textAlign: 'center', marginBottom: 6 }}>
-                01. Dashboard Screen
+                01. Understand Your Dashboard
               </Text>
 
               {/* Description */}
               <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, marginBottom: 16, paddingHorizontal: 4 }}>
-                Your Home for Smart Expense Tracking — Workspace/Group selector, Role badge, Notification bell, My Wallet & Collective Wallet cards, Date selector calendar, and Daily category quick-add buttons (+).
+                See balances, manage private lending, and record daily entries from one screen. Switch teams, open tutorials, check personal & collective wallet balances, manage Money Circle, and add daily category breakdown entries.
               </Text>
 
               {/* Location Hint Card for full tutorial */}
@@ -2785,67 +2984,67 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
     fontWeight: 'bold',
   },
   sectionHeader: {
-    marginBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    marginBottom: 10,
   },
   sectionTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: 'bold',
     color: colors.textPrimary,
   },
-  attendanceContainer: {
+  sectionSubtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  dailyTotalBadge: {
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  dailyTotalBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  emptyDailyCard: {
     backgroundColor: colors.cardBg,
     borderRadius: 14,
-    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  emptyDailyTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  emptyDailySubtitle: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 3,
+  },
+  categoryCard: {
+    backgroundColor: colors.cardBg,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
     marginBottom: 10,
-    marginTop: 2,
-  },
-  attendanceTitle: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  mealsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  mealCheckbox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.inputBg,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 6,
-    paddingHorizontal: 6,
-    flex: 1,
-    justifyContent: 'center',
-    marginHorizontal: 3,
-  },
-  mealCheckboxActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  mealText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginLeft: 4,
-  },
-  mealTextActive: {
-    color: colors.primaryDark,
+    overflow: 'hidden',
   },
   categoryRow: {
     flexDirection: 'row',
-    backgroundColor: colors.cardBg,
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
+    padding: 12,
     alignItems: 'center',
-    marginBottom: 6,
   },
   catIconBox: {
     backgroundColor: colors.primaryLight,
@@ -2864,12 +3063,140 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
   catSpent: {
     fontSize: 12,
     color: colors.primary,
+    fontWeight: '600',
     marginTop: 2,
+  },
+  itemCountBadge: {
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  itemCountBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.primaryDark,
   },
   addBtn: {
     backgroundColor: colors.primary,
     padding: 6,
     borderRadius: 8,
+  },
+  dropdownBtn: {
+    width: 30,
+    height: 30,
+    backgroundColor: colors.inputBg,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dropdownBtnActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+  },
+  emptyCatContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  emptyCatText: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+  },
+  categoryItemsContainer: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border + '60',
+    backgroundColor: darkMode ? (colors.surface || '#1E1E1E') : '#F9FAFB',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  dailyBreakdownItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+  },
+  dailyBreakdownItemRowBorder: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  dailyItemMainCol: {
+    flex: 1,
+    marginRight: 10,
+  },
+  dailyItemTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dailyItemName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  dailyItemQtyBadge: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    marginLeft: 6,
+  },
+  dailyItemQtyText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  dailyItemMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 3,
+  },
+  dailyItemBuyer: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    maxWidth: 130,
+  },
+  dailyItemReceiptTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primaryLight,
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    marginLeft: 6,
+  },
+  dailyItemReceiptText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: colors.primaryDark,
+  },
+  dailyItemEditedText: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    marginLeft: 4,
+  },
+  dailyItemRightCol: {
+    alignItems: 'flex-end',
+  },
+  dailyItemPrice: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  dailyItemSplitInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  dailyItemSplitText: {
+    fontSize: 10,
+    color: colors.textTertiary,
   },
   globalLoader: {
     ...StyleSheet.absoluteFill,

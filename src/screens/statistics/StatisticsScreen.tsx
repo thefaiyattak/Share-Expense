@@ -636,6 +636,43 @@ export default function StatisticsScreen() {
                 );
               })}
             </View>
+
+            {(() => {
+              const selectedDayExpenses = filteredExpenses.filter((e) => {
+                const expDate = parseDate(e.date);
+                return expDate.toDateString() === daysData[activeSelectedIdx!].dateStr;
+              });
+
+              if (selectedDayExpenses.length === 0) return null;
+
+              return (
+                <View style={styles.calloutItemsContainer}>
+                  <View style={styles.calloutDivider} />
+                  <Text style={styles.calloutItemsHeader}>
+                    Purchased Items ({selectedDayExpenses.length}):
+                  </Text>
+                  {selectedDayExpenses.map((exp, idx) => {
+                    const itemTotal = getExpenseTotal(exp);
+                    return (
+                      <View 
+                        key={exp.id || `stats-item-${idx}`} 
+                        style={[styles.calloutItemRow, idx > 0 && styles.calloutItemRowBorder]}
+                      >
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                          <Text style={styles.calloutItemName} numberOfLines={1}>
+                            {exp.itemName}{exp.quantity && exp.quantity !== '1' ? ` (x${exp.quantity})` : ''}
+                          </Text>
+                          <Text style={styles.calloutItemBuyer} numberOfLines={1}>
+                            Paid by {exp.userName || 'Member'}
+                          </Text>
+                        </View>
+                        <Text style={styles.calloutItemPrice}>{formatAmount(itemTotal)}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })()}
           </View>
         )}
       </View>
@@ -1146,6 +1183,47 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
     fontWeight: '600',
     color: colors.textPrimary,
     marginLeft: 4,
+  },
+  calloutItemsContainer: {
+    marginTop: 8,
+  },
+  calloutDivider: {
+    height: 1,
+    backgroundColor: colors.divider,
+    marginBottom: 6,
+  },
+  calloutItemsHeader: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  calloutItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+  },
+  calloutItemRowBorder: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+  },
+  calloutItemName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  calloutItemBuyer: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  calloutItemPrice: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
   },
   memberRowCard: {
     flexDirection: 'row',

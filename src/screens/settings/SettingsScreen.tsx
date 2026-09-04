@@ -30,6 +30,7 @@ import { getThemeColors } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
+import { defaultTutorialsList } from '../../components/AppTutorialModal';
 
 const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
 
@@ -108,57 +109,7 @@ export default function SettingsScreen() {
     });
   }, []);
 
-  const defaultTutorials = React.useMemo(() => [
-    {
-      id: 'def_1',
-      title: '01. Dashboard Screen',
-      description: 'Your Home for Smart Expense Tracking — Workspace/Group selector, Role badge, Notification bell, My Wallet & Collective Wallet cards, Date selector calendar, and Daily category quick-add buttons (+).',
-      imageSource: require('../../../assets/tutorials/01_dashboard_screen.png'),
-      isDefault: true,
-    },
-    {
-      id: 'def_2',
-      title: '02. Switch Group Modal',
-      description: 'Switch Anytime, Track Everything — Switch easily between Personal Workspace and group workspaces, view group invite codes, or create and join groups.',
-      imageSource: require('../../../assets/tutorials/02_switch_group_modal.png'),
-      isDefault: true,
-    },
-    {
-      id: 'def_3',
-      title: '03. Add Expense Screen',
-      description: 'Add Every Detail, Split with Ease — Select target date, enter item name, quantity & unit price, attach receipts, add multiple items, and split cost equally among selected members.',
-      imageSource: require('../../../assets/tutorials/03_add_expense_screen.png'),
-      isDefault: true,
-    },
-    {
-      id: 'def_4',
-      title: '04. Expenses Screen',
-      description: 'See Everything, Stay in Control — View collective wallet deposit summary, group invite code & share, add member, color-coded spending distribution chart, members list & generate PDF/CSV reports.',
-      imageSource: require('../../../assets/tutorials/04_expenses_screen.png'),
-      isDefault: true,
-    },
-    {
-      id: 'def_5',
-      title: '05. Member Profile Screen',
-      description: 'Your Finances, All in One Place — Track wallet deposit card, spent (paid out) card, calculated share card, net balance/deficit card, admin pending adjustments (+/-), carry to next month, wallet usage gauge, and expense history.',
-      imageSource: require('../../../assets/tutorials/05_member_profile_screen.png'),
-      isDefault: true,
-    },
-    {
-      id: 'def_6',
-      title: '06. Statistics Screen',
-      description: 'Understand Your Spending at a Glance — Time range selector (Daily, Weekly, Monthly, Custom), range total banner, category summary cards, donut chart breakdown, and spending trend line graph over time.',
-      imageSource: require('../../../assets/tutorials/06_statistics_screen.png'),
-      isDefault: true,
-    },
-    {
-      id: 'def_7',
-      title: '07. Settings Screen',
-      description: 'Personalize Your App Your Way — Manage profile & account, groups settings, currency selection, dark mode toggle, push notifications settings, forget/change password, sign out, deactivate & delete account.',
-      imageSource: require('../../../assets/tutorials/07_settings_screen.png'),
-      isDefault: true,
-    },
-  ], []);
+  const defaultTutorials = defaultTutorialsList;
 
   const combinedTutorials = React.useMemo(() => {
     return [...defaultTutorials, ...customTutorials];
@@ -1128,16 +1079,7 @@ export default function SettingsScreen() {
           {renderItem('book-outline', 'App Tutorial & Guides', () => {
             setActiveTutorialIndex(0);
             setTutorialModalVisible(true);
-          }, (
-            <View pointerEvents="none" style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{ backgroundColor: colors.primary + '18', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>
-                  {combinedTutorials.length} Guides
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-            </View>
-          ))}
+          })}
         </View>
 
         {/* About App */}
