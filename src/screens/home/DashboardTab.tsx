@@ -1493,14 +1493,6 @@ export default function DashboardTab() {
           )}
         </View>
 
-        {selectedDateExpenses.length === 0 && (
-          <View style={styles.emptyDailyCard}>
-            <Ionicons name="calendar-outline" size={24} color={colors.textTertiary} style={{ marginBottom: 6 }} />
-            <Text style={styles.emptyDailyTitle}>No expenses on this date</Text>
-            <Text style={styles.emptyDailySubtitle}>Tap + on any category below to record a purchase</Text>
-          </View>
-        )}
-
         {mealCategories.map((m) => {
           const categoryTotal = getCategoryTotal(m.key);
           const catExpenses = categoryExpensesMap[m.key] || [];
@@ -2995,11 +2987,6 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
     fontWeight: 'bold',
     color: colors.textPrimary,
   },
-  sectionSubtitle: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
   dailyTotalBadge: {
     backgroundColor: colors.primaryLight,
     paddingHorizontal: 10,
@@ -3012,26 +2999,6 @@ const getStyles = (colors: any, darkMode: boolean) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: colors.primaryDark,
-  },
-  emptyDailyCard: {
-    backgroundColor: colors.cardBg,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  emptyDailyTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  emptyDailySubtitle: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 3,
   },
   categoryCard: {
     backgroundColor: colors.cardBg,
