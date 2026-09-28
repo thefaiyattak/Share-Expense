@@ -32,9 +32,10 @@ import Svg, { Circle } from 'react-native-svg';
 import { db } from '../../services/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { expenseService } from '../../services/expenseService';
+import { authService } from '../../services/authService';
 import { pdfService } from '../../services/pdfService';
 import { notificationService } from '../../services/notificationService';
-import { AppUser } from '../../models/types';
+import { AppUser, UserRole } from '../../models/types';
 import { calculateIntegerPercentages } from '../../utils/math';
 import ChangeHistoryModal from '../../components/ChangeHistoryModal';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
@@ -610,6 +611,46 @@ export default function UserDetailScreen() {
     );
   };
 
+  // Handle Member Promotion / Demotion
+  const handleToggleRole = () => {
+    if (!userMemberObj) return;
+    const isTargetAdmin = userMemberObj.role === 'admin';
+    const newRole: UserRole = isTargetAdmin ? 'user' : 'admin';
+    const actionLabel = isTargetAdmin ? 'Demote to Member' : 'Promote to Admin';
+    const confirmMessage = isTargetAdmin
+      ? `Are you sure you want to demote ${userName} to a regular Member? They will no longer have admin privileges.`
+      : `Are you sure you want to promote ${userName} to Admin? They will have full administrative permissions for this group.`;
+
+    Alert.alert(
+      actionLabel,
+      confirmMessage,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: actionLabel,
+          style: isTargetAdmin ? 'destructive' : 'default',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await authService.updateMemberRole(userId, newRole);
+              // Update local state if editing own profile
+              if (currentAppUser && currentAppUser.id === userId) {
+                setCurrentAppUser({ ...currentAppUser, role: newRole });
+              }
+              // Update members array in store
+              setMembers(members.map(m => m.id === userId ? { ...m, role: newRole } : m));
+              Alert.alert('Success', `${userName} is now ${newRole === 'admin' ? 'an Admin' : 'a Member'}.`);
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Failed to update member role');
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <GlobalLoader message="Updating..." visible={loading} />
@@ -627,7 +668,21 @@ export default function UserDetailScreen() {
             )}
           </View>
           <View style={styles.headerTextCol}>
-            <Text style={styles.userNameCompact} numberOfLines={1}>{userName}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.userNameCompact} numberOfLines={1}>{userName}</Text>
+              {userMemberObj && (
+                <View style={{
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: 6,
+                  backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFFFFF' }}>
+                    {userMemberObj.role === 'admin' ? 'Admin' : 'Member'}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
 
           {/* Month Selector Pill */}
@@ -769,6 +824,43 @@ export default function UserDetailScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+          )}
+
+          {/* Admin Member Role Management Button */}
+          {currentAppUser?.role === 'admin' && currentAppUser?.id !== userId && userMemberObj && (
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: userMemberObj.role === 'admin' 
+                  ? (darkMode ? '#3E2723' : '#FFEBEE') 
+                  : (darkMode ? '#152C3E' : '#E8F5E9'),
+                borderWidth: 1,
+                borderColor: userMemberObj.role === 'admin' 
+                  ? (darkMode ? '#D32F2F' : '#FFCDD2') 
+                  : (darkMode ? '#2E7D32' : '#C8E6C9'),
+                borderRadius: 10,
+                paddingVertical: 10,
+                paddingHorizontal: 12,
+                marginTop: 8
+              }}
+              onPress={handleToggleRole}
+            >
+              <Ionicons 
+                name={userMemberObj.role === 'admin' ? "arrow-down-circle-outline" : "shield-checkmark-outline"} 
+                size={16} 
+                color={userMemberObj.role === 'admin' ? colors.error : colors.primary} 
+                style={{ marginRight: 6 }} 
+              />
+              <Text style={{ 
+                fontSize: 12, 
+                fontWeight: '700', 
+                color: userMemberObj.role === 'admin' ? colors.error : colors.primary 
+              }}>
+                {userMemberObj.role === 'admin' ? 'Demote Admin to Member' : 'Promote Member to Admin'}
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
 

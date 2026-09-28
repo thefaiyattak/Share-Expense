@@ -28,6 +28,7 @@ import { authService } from '../../services/authService';
 import { notificationService } from '../../services/notificationService';
 import { getThemeColors } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { AppUser, UserRole } from '../../models/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
 import { defaultTutorialsList } from '../../components/AppTutorialModal';
@@ -667,6 +668,42 @@ export default function SettingsScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleToggleMemberRole = (member: AppUser) => {
+    const isTargetAdmin = member.role === 'admin';
+    const newRole: UserRole = isTargetAdmin ? 'user' : 'admin';
+    const actionLabel = isTargetAdmin ? 'Demote to Member' : 'Promote to Admin';
+    const confirmMessage = isTargetAdmin
+      ? `Are you sure you want to demote ${member.name} to a regular Member? They will no longer have admin privileges.`
+      : `Are you sure you want to promote ${member.name} to Admin? They will have full administrative permissions for this group.`;
+
+    Alert.alert(
+      actionLabel,
+      confirmMessage,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: actionLabel,
+          style: isTargetAdmin ? 'destructive' : 'default',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await authService.updateMemberRole(member.id, newRole);
+              // If current user is toggled, update local state as well
+              if (currentAppUser && currentAppUser.id === member.id) {
+                setCurrentAppUser({ ...currentAppUser, role: newRole });
+              }
+              Alert.alert('Success', `${member.name} is now ${newRole === 'admin' ? 'an Admin' : 'a Member'}.`);
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Failed to update member role');
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleRemoveMemberFromGroup = async (memberDocId: string) => {
@@ -1681,14 +1718,53 @@ export default function SettingsScreen() {
                   return (
                     <View key={m.id} style={styles.memberListRow}>
                       <View style={styles.memberInfoCol}>
-                        <Text style={styles.memberNameText}>{displayName}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.memberNameText}>{displayName}</Text>
+                          <View style={[styles.roleBadge, { backgroundColor: m.role === 'admin' ? (darkMode ? '#152C3E' : '#E3F2FD') : (darkMode ? '#2D2D2D' : '#F5F5F5') }]}>
+                            <Text style={[styles.roleBadgeText, { color: m.role === 'admin' ? colors.primary : colors.textSecondary }]}>
+                              {m.role === 'admin' ? 'Admin' : 'Member'}
+                            </Text>
+                          </View>
+                        </View>
                         <Text style={styles.memberEmailText}>{m.email}</Text>
                       </View>
-                      {m.email !== currentAppUser?.email && (
-                        <TouchableOpacity onPress={() => handleRemoveMemberFromGroup(m.id)} style={styles.removeMemBtn}>
-                          <Ionicons name="trash-outline" size={18} color={colors.error} />
-                        </TouchableOpacity>
-                      )}
+                      
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        {m.email !== currentAppUser?.email && (
+                          <TouchableOpacity 
+                            onPress={() => handleToggleMemberRole(m)} 
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              paddingHorizontal: 8,
+                              paddingVertical: 5,
+                              borderRadius: 8,
+                              backgroundColor: m.role === 'admin' ? (darkMode ? '#3E2723' : '#FFEBEE') : (darkMode ? '#152C3E' : '#E8F5E9'),
+                              borderWidth: 1,
+                              borderColor: m.role === 'admin' ? (darkMode ? '#D32F2F' : '#FFCDD2') : (darkMode ? '#2E7D32' : '#C8E6C9')
+                            }}
+                          >
+                            <Ionicons 
+                              name={m.role === 'admin' ? 'arrow-down-circle-outline' : 'shield-checkmark-outline'} 
+                              size={14} 
+                              color={m.role === 'admin' ? colors.error : colors.primary} 
+                              style={{ marginRight: 4 }} 
+                            />
+                            <Text style={{ 
+                              fontSize: 11, 
+                              fontWeight: '700', 
+                              color: m.role === 'admin' ? colors.error : colors.primary 
+                            }}>
+                              {m.role === 'admin' ? 'Demote' : 'Promote'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                        {m.email !== currentAppUser?.email && (
+                          <TouchableOpacity onPress={() => handleRemoveMemberFromGroup(m.id)} style={styles.removeMemBtn}>
+                            <Ionicons name="trash-outline" size={18} color={colors.error} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
                   );
                 })}
@@ -1816,7 +1892,7 @@ export default function SettingsScreen() {
 
             <View style={{ backgroundColor: colors.primary + '15', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, marginBottom: 12 }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>
-                Version 1.7.0
+                Version 1.8.0
               </Text>
             </View>
 

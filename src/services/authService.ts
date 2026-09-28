@@ -435,6 +435,12 @@ export const authService = {
     await deleteDoc(doc(db, 'users', userDocId));
   },
 
+  updateMemberRole: async (userDocId: string, newRole: UserRole) => {
+    await updateDoc(doc(db, 'users', userDocId), {
+      role: newRole
+    });
+  },
+
   getTeamMembers: (teamId: string, callback: (users: AppUser[]) => void) => {
     const q = query(collection(db, 'users'), where('teamId', '==', teamId));
     return onSnapshot(q, (snap) => {

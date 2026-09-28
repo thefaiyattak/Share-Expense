@@ -659,7 +659,25 @@ export default function ExpensesScreen() {
                 </View>
                 
                 <View style={styles.memberInfo}>
-                  <Text style={styles.memberName}>{displayName}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={styles.memberName}>{displayName}</Text>
+                    <View style={{
+                      paddingHorizontal: 6,
+                      paddingVertical: 1.5,
+                      borderRadius: 6,
+                      backgroundColor: m.role === 'admin' 
+                        ? (darkMode ? '#152C3E' : '#E3F2FD') 
+                        : (darkMode ? '#2D2D2D' : '#F5F5F5')
+                    }}>
+                      <Text style={{ 
+                        fontSize: 9.5, 
+                        fontWeight: '700', 
+                        color: m.role === 'admin' ? colors.primary : colors.textSecondary 
+                      }}>
+                        {m.role === 'admin' ? 'Admin' : 'Member'}
+                      </Text>
+                    </View>
+                  </View>
                   <Text style={styles.memberSubInfo}>
                     Share: <Text style={{ color: colors.financial.calculatedShare, fontWeight: '700' }}>{formatAmount(share)}</Text>  ·  Wallet: <Text style={{ color: colors.financial.walletDeposit, fontWeight: '700' }}>{formatAmount(wallet)}</Text>
                   </Text>
