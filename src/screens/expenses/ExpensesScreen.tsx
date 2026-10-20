@@ -32,6 +32,8 @@ import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
 import SettlementModal from '../../components/SettlementModal';
 import { settlementService } from '../../services/settlementService';
 
+import * as Clipboard from 'expo-clipboard';
+
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental && !(globalThis as any).nativeFabricUIManager && !(globalThis as any).__turboModuleProxy) {
   try {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -162,10 +164,17 @@ export default function ExpensesScreen() {
     });
   }, [members, memberSpentMap, shares, currentMonthKey]);
 
+  const handleCopyTeamId = async () => {
+    if (activeTeamId) {
+      await Clipboard.setStringAsync(activeTeamId);
+      Alert.alert('Copied', `Invite code ${activeTeamId} copied to clipboard!`);
+    }
+  };
+
   const handleShareTeamId = () => {
     if (activeTeamId) {
       Share.share({
-        message: `Join my team on Share Expense!\nTeam ID: ${activeTeamId}`,
+        message: `Join my team on Share Expense!\n\nInvite Code:\n${activeTeamId}`,
       });
     }
   };
@@ -558,11 +567,26 @@ export default function ExpensesScreen() {
               <View style={styles.teamIdIconCircle}>
                 <Ionicons name="key-outline" size={18} color="#E65100" />
               </View>
-              <View style={styles.teamIdTextCol}>
-                <Text style={styles.teamIdLabel}>Team ID (Invite Code)</Text>
+              <TouchableOpacity 
+                style={styles.teamIdTextCol} 
+                onPress={handleCopyTeamId}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.teamIdLabel}>Team ID (Tap to Copy)</Text>
                 <Text style={styles.teamIdVal}>{activeTeamId}</Text>
-              </View>
-              <TouchableOpacity onPress={handleShareTeamId} style={styles.shareButton}>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                onPress={handleCopyTeamId} 
+                style={[styles.shareButton, { marginRight: 4 }]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="copy-outline" size={18} color="#E65100" />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                onPress={handleShareTeamId} 
+                style={styles.shareButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
                 <Ionicons name="share-social-outline" size={18} color="#E65100" />
               </TouchableOpacity>
             </View>

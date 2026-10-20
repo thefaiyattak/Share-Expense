@@ -11,6 +11,7 @@ import {
 import { db } from './firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PersonalLoan } from '../models/types';
+import { notificationService } from './notificationService';
 
 const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
 const LOCAL_LOANS_KEY = '@personal_loans_cache';
@@ -102,50 +103,95 @@ export const loanService = {
       console.error('Error updating cached loans:', err);
     }
 
+    // Notify involved members with push notification and in-app notification
+    if (newLoan.teamId) {
+      const desc = `${newLoan.lenderName} recorded ${newLoan.amount.toLocaleString()} given to ${newLoan.borrowerName}${newLoan.note ? ` (${newLoan.note})` : ''}`;
+      notificationService.notify(
+        newLoan.teamId,
+        'Money Circle: New Entry',
+        desc,
+        'moneyCircle',
+        [newLoan.lenderId, newLoan.borrowerId]
+      ).catch(err => console.error('Failed to notify loan creation:', err));
+    }
+
     return newLoan;
   },
 
   /**
    * Settle or toggle status of a loan
    */
-  settleLoan: async (loanId: string, status: 'PENDING' | 'SETTLED' = 'SETTLED'): Promise<void> => {
+  settleLoan: async (loanId: string, status: 'PENDING' | 'SETTLED' = 'SETTLED', loanData?: PersonalLoan): Promise<void> => {
     try {
       await updateDoc(doc(db, 'personal_loans', loanId), { status });
     } catch (e) {
       console.warn('Could not update loan status in Firestore, updating locally:', e);
     }
 
+    let targetLoan: PersonalLoan | undefined = loanData;
     try {
       const cached = await appStorage.getItem(LOCAL_LOANS_KEY);
       if (cached) {
         const list: PersonalLoan[] = JSON.parse(cached);
+        if (!targetLoan) {
+          targetLoan = list.find(l => l.id === loanId);
+        }
         const updated = list.map(l => l.id === loanId ? { ...l, status } : l);
         await appStorage.setItem(LOCAL_LOANS_KEY, JSON.stringify(updated));
       }
     } catch (err) {
       console.error('Error updating cached loan status:', err);
     }
+
+    // Notify involved members
+    if (targetLoan && targetLoan.teamId) {
+      const statusText = status === 'SETTLED' ? 'settled' : 'marked as pending';
+      const desc = `Transaction of ${targetLoan.amount.toLocaleString()} between ${targetLoan.lenderName} and ${targetLoan.borrowerName} was ${statusText}.`;
+      notificationService.notify(
+        targetLoan.teamId,
+        `Money Circle: Transaction ${status === 'SETTLED' ? 'Settled' : 'Pending'}`,
+        desc,
+        'moneyCircle',
+        [targetLoan.lenderId, targetLoan.borrowerId]
+      ).catch(err => console.error('Failed to notify loan status update:', err));
+    }
   },
 
   /**
    * Delete a loan
    */
-  deleteLoan: async (loanId: string): Promise<void> => {
+  deleteLoan: async (loanId: string, loanData?: PersonalLoan): Promise<void> => {
     try {
       await deleteDoc(doc(db, 'personal_loans', loanId));
     } catch (e) {
       console.warn('Could not delete loan in Firestore:', e);
     }
 
+    let targetLoan: PersonalLoan | undefined = loanData;
     try {
       const cached = await appStorage.getItem(LOCAL_LOANS_KEY);
       if (cached) {
         const list: PersonalLoan[] = JSON.parse(cached);
+        if (!targetLoan) {
+          targetLoan = list.find(l => l.id === loanId);
+        }
         const updated = list.filter(l => l.id !== loanId);
         await appStorage.setItem(LOCAL_LOANS_KEY, JSON.stringify(updated));
       }
     } catch (err) {
       console.error('Error deleting cached loan:', err);
+    }
+
+    // Notify involved members
+    if (targetLoan && targetLoan.teamId) {
+      const desc = `Transaction of ${targetLoan.amount.toLocaleString()} between ${targetLoan.lenderName} and ${targetLoan.borrowerName} was deleted.`;
+      notificationService.notify(
+        targetLoan.teamId,
+        'Money Circle: Transaction Deleted',
+        desc,
+        'moneyCircle',
+        [targetLoan.lenderId, targetLoan.borrowerId]
+      ).catch(err => console.error('Failed to notify loan deletion:', err));
     }
   },
 

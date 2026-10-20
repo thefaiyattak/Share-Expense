@@ -97,7 +97,7 @@ export default function MoneyCircleScreen() {
         {
           text: 'Confirm',
           onPress: async () => {
-            await loanService.settleLoan(loan.id, nextStatus);
+            await loanService.settleLoan(loan.id, nextStatus, loan);
             setLoans(prev => prev.map(l => l.id === loan.id ? { ...l, status: nextStatus } : l));
           },
         },
@@ -115,7 +115,7 @@ export default function MoneyCircleScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await loanService.deleteLoan(loan.id);
+            await loanService.deleteLoan(loan.id, loan);
             setLoans(prev => prev.filter(l => l.id !== loan.id));
           },
         },

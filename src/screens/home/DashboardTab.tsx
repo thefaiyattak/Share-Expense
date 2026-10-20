@@ -36,6 +36,7 @@ import AppTutorialModal from '../../components/AppTutorialModal';
 import LoanModal from '../../components/LoanModal';
 import { loanService } from '../../services/loanService';
 import { PersonalLoan, Expense } from '../../models/types';
+import * as Clipboard from 'expo-clipboard';
 
 const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
 
@@ -247,10 +248,11 @@ export default function DashboardTab() {
         adjustments: true,
         transfers: true,
         monthlyReports: true,
+        moneyCircle: true,
       };
       try {
-        const stored = await appStorage.getItem('@app_notification_settings');
-        if (stored) prefs = JSON.parse(stored);
+        const stored = await appStorage.getItem('notif_settings') || await appStorage.getItem('@app_notification_settings');
+        if (stored) prefs = { ...prefs, ...JSON.parse(stored) };
       } catch (e) {}
 
       const notifs: any[] = [];
@@ -262,6 +264,16 @@ export default function DashboardTab() {
         }
         if (createdDate.getTime() < cutoffTs) return;
 
+        // If master toggle is OFF, suppress all
+        if (prefs.masterEnabled === false) return;
+
+        // If targeted notification (e.g. private Money Circle between 2 members), only display to involved parties
+        if (data.targetUserIds && Array.isArray(data.targetUserIds)) {
+          if (!currentAppUser?.id || !data.targetUserIds.includes(currentAppUser.id)) {
+            return;
+          }
+        }
+
         const notifType = data.notifType || 'newExpense';
 
         // Filter based on user preferences
@@ -272,6 +284,7 @@ export default function DashboardTab() {
         if (notifType === 'adjustments' && !prefs.adjustments) return;
         if (notifType === 'transfers' && !prefs.transfers) return;
         if (notifType === 'monthlyReports' && !prefs.monthlyReports) return;
+        if (notifType === 'moneyCircle' && !prefs.moneyCircle) return;
 
         let timeLabel = '';
         if (data.createdAt) {
@@ -285,7 +298,12 @@ export default function DashboardTab() {
         let badgeColor = '#2E7D32';
         let iconName = 'cart-outline';
 
-        if (notifType === 'walletUpdates' || (data.title && data.title.includes('Wallet'))) {
+        if (notifType === 'moneyCircle' || (data.title && data.title.includes('Money Circle'))) {
+          badgeText = 'CIRCLE';
+          badgeBg = '#E0F2F1';
+          badgeColor = '#00796B';
+          iconName = 'repeat-outline';
+        } else if (notifType === 'walletUpdates' || (data.title && data.title.includes('Wallet'))) {
           badgeText = 'WALLET';
           badgeBg = '#E3F2FD';
           badgeColor = '#1976D2';
@@ -825,20 +843,21 @@ export default function DashboardTab() {
   };
 
   const handleJoinGroup = async () => {
-    if (!inviteCodeInput.trim()) {
+    const cleanCode = authService.extractInviteCode(inviteCodeInput);
+    if (!cleanCode) {
       setJoinError('Invite code is required');
       return;
     }
     setJoinModalVisible(false);
     setLoading(true);
     try {
-      const joinedUser = await authService.joinTeam(inviteCodeInput.trim().toUpperCase());
+      const joinedUser = await authService.joinTeam(cleanCode);
       const email = currentAppUser?.email;
       if (email) {
         const teams = await authService.getUserTeams(email);
         setUserTeams(teams);
         
-        const newTeam = teams.find(t => t.teamId === inviteCodeInput.trim().toUpperCase());
+        const newTeam = teams.find(t => t.teamId === cleanCode);
         if (newTeam) {
           const switchedUser = await authService.switchActiveTeam(newTeam.userDocId);
           setCurrentAppUser(switchedUser);
@@ -1696,17 +1715,51 @@ export default function DashboardTab() {
             <Text style={styles.modalTitle}>Join a group</Text>
             <Text style={styles.modalSubtitle}>Enter the invite code (Team ID) provided by the group admin.</Text>
 
-            <TextInput 
-              style={[styles.modalInput, joinError ? { borderColor: colors.error, borderWidth: 1.5 } : null]}
-              placeholder="Invite Code (e.g. A1B2C3D4)"
-              placeholderTextColor={colors.textSecondary}
-              value={inviteCodeInput}
-              onChangeText={(txt) => {
-                setInviteCodeInput(txt);
-                if (joinError) setJoinError('');
-              }}
-              autoCapitalize="characters"
-            />
+            <View style={{ position: 'relative', justifyContent: 'center', marginBottom: 16 }}>
+              <TextInput 
+                style={[styles.modalInput, { paddingRight: 80, marginBottom: 0 }, joinError ? { borderColor: colors.error, borderWidth: 1.5 } : null]}
+                placeholder="Invite Code (e.g. A1B2C3D4)"
+                placeholderTextColor={colors.textSecondary}
+                value={inviteCodeInput}
+                onChangeText={(txt) => {
+                  setInviteCodeInput(authService.extractInviteCode(txt));
+                  if (joinError) setJoinError('');
+                }}
+                autoCapitalize="characters"
+              />
+              <TouchableOpacity
+                onPress={async () => {
+                  try {
+                    const text = await Clipboard.getStringAsync();
+                    if (text) {
+                      const extracted = authService.extractInviteCode(text);
+                      if (extracted) {
+                        setInviteCodeInput(extracted);
+                        if (joinError) setJoinError('');
+                      } else {
+                        Alert.alert('Clipboard', 'No valid invite code found in clipboard.');
+                      }
+                    } else {
+                      Alert.alert('Clipboard', 'Clipboard is empty.');
+                    }
+                  } catch (_) {}
+                }}
+                style={{
+                  position: 'absolute',
+                  right: 8,
+                  paddingVertical: 6,
+                  paddingHorizontal: 8,
+                  backgroundColor: colors.primaryLight,
+                  borderRadius: 6,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="clipboard-outline" size={13} color={colors.primaryDark} style={{ marginRight: 3 }} />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primaryDark }}>Paste</Text>
+              </TouchableOpacity>
+            </View>
             {joinError ? (
               <Text style={{ color: colors.error, fontSize: 11, fontWeight: '600', marginTop: -8, marginBottom: 12, marginLeft: 4 }}>
                 {joinError}

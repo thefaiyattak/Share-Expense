@@ -227,13 +227,19 @@ export default function SettingsScreen() {
     adjustments: true,
     transfers: true,
     monthlyReports: true,
+    moneyCircle: true,
   });
 
   useEffect(() => {
     appStorage.getItem('notif_settings').then((val: any) => {
       if (val) {
         try {
-          setNotifSettings(JSON.parse(val));
+          const parsed = JSON.parse(val);
+          setNotifSettings(prev => ({
+            ...prev,
+            ...parsed,
+            moneyCircle: parsed.moneyCircle !== undefined ? parsed.moneyCircle : true,
+          }));
         } catch (e) { }
       }
     });
@@ -243,6 +249,7 @@ export default function SettingsScreen() {
     const updated = { ...notifSettings, [key]: val };
     setNotifSettings(updated);
     appStorage.setItem('notif_settings', JSON.stringify(updated)).catch(console.error);
+    appStorage.setItem('@app_notification_settings', JSON.stringify(updated)).catch(console.error);
 
     if (currentAppUser?.id) {
       const userRef = doc(db, 'users', currentAppUser.id);
@@ -299,7 +306,7 @@ export default function SettingsScreen() {
 
   const handleShareTeamId = (teamId: string) => {
     Share.share({
-      message: `Join my group on Share Expense!\nInvite Code: ${teamId}`,
+      message: `Join my group on Share Expense!\n\nInvite Code:\n${teamId}`,
     });
   };
 
@@ -357,20 +364,21 @@ export default function SettingsScreen() {
   };
 
   const handleJoinGroup = async () => {
-    if (!inviteCodeInput.trim()) {
+    const cleanCode = authService.extractInviteCode(inviteCodeInput);
+    if (!cleanCode) {
       Alert.alert('Error', 'Please enter an invite code.');
       return;
     }
     setJoinModalVisible(false);
     setLoading(true);
     try {
-      const joinedUser = await authService.joinTeam(inviteCodeInput.trim().toUpperCase());
+      const joinedUser = await authService.joinTeam(cleanCode);
       const email = currentAppUser?.email;
       if (email) {
         const teams = await authService.getUserTeams(email);
         setUserTeams(teams);
 
-        const newTeam = teams.find(t => t.teamId === inviteCodeInput.trim().toUpperCase());
+        const newTeam = teams.find(t => t.teamId === cleanCode);
         if (newTeam) {
           const switchedUser = await authService.switchActiveTeam(newTeam.userDocId);
           setCurrentAppUser(switchedUser);
@@ -2025,14 +2033,47 @@ export default function SettingsScreen() {
             <Text style={styles.modalTitle}>Join a group</Text>
             <Text style={styles.modalSubtitle}>Enter the invite code (Team ID) provided by the group admin.</Text>
 
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Invite Code (e.g. A1B2C3D4)"
-              placeholderTextColor={colors.textSecondary}
-              value={inviteCodeInput}
-              onChangeText={setInviteCodeInput}
-              autoCapitalize="characters"
-            />
+            <View style={{ position: 'relative', justifyContent: 'center', marginBottom: 16 }}>
+              <TextInput
+                style={[styles.modalInput, { paddingRight: 80, marginBottom: 0 }]}
+                placeholder="Invite Code (e.g. A1B2C3D4)"
+                placeholderTextColor={colors.textSecondary}
+                value={inviteCodeInput}
+                onChangeText={(txt) => setInviteCodeInput(authService.extractInviteCode(txt))}
+                autoCapitalize="characters"
+              />
+              <TouchableOpacity
+                onPress={async () => {
+                  try {
+                    const text = await Clipboard.getStringAsync();
+                    if (text) {
+                      const extracted = authService.extractInviteCode(text);
+                      if (extracted) {
+                        setInviteCodeInput(extracted);
+                      } else {
+                        Alert.alert('Clipboard', 'No valid invite code found in clipboard.');
+                      }
+                    } else {
+                      Alert.alert('Clipboard', 'Clipboard is empty.');
+                    }
+                  } catch (_) {}
+                }}
+                style={{
+                  position: 'absolute',
+                  right: 8,
+                  paddingVertical: 6,
+                  paddingHorizontal: 8,
+                  backgroundColor: colors.primaryLight,
+                  borderRadius: 6,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="clipboard-outline" size={13} color={colors.primaryDark} style={{ marginRight: 3 }} />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primaryDark }}>Paste</Text>
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.modalBtnRow}>
               <TouchableOpacity
@@ -2170,7 +2211,7 @@ export default function SettingsScreen() {
               </View>
 
               {/* Monthly Reports */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, opacity: notifSettings.masterEnabled ? 1 : 0.4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border, opacity: notifSettings.masterEnabled ? 1 : 0.4 }}>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>Monthly Reports & Statements</Text>
                   <Text style={{ fontSize: 11, color: colors.textSecondary }}>Notify when monthly statement reports are ready</Text>
@@ -2179,6 +2220,20 @@ export default function SettingsScreen() {
                   disabled={!notifSettings.masterEnabled}
                   value={notifSettings.monthlyReports}
                   onValueChange={(val) => updateNotifSetting('monthlyReports', val)}
+                  trackColor={{ false: '#EEEEEE', true: colors.primary }}
+                />
+              </View>
+
+              {/* Money Circle Transactions */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, opacity: notifSettings.masterEnabled ? 1 : 0.4 }}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>Money Circle (Loans & Khata)</Text>
+                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>Notify when a member records, settles, or deletes a circle transaction</Text>
+                </View>
+                <Switch
+                  disabled={!notifSettings.masterEnabled}
+                  value={notifSettings.moneyCircle}
+                  onValueChange={(val) => updateNotifSetting('moneyCircle', val)}
                   trackColor={{ false: '#EEEEEE', true: colors.primary }}
                 />
               </View>

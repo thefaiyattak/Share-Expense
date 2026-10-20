@@ -85,7 +85,6 @@ function TabNavigator() {
 export default function App() {
   const { currentAppUser, setCurrentAppUser, setExpenses, setMembers, setAttendance, setUserTeams, darkMode } = useStore();
   const [initializing, setInitializing] = useState(true);
-  const [minSplashDone, setMinSplashDone] = useState(false);
   const [splashMounted, setSplashMounted] = useState(true);
   const splashOpacity = React.useRef(new Animated.Value(1)).current;
 
@@ -125,29 +124,6 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    // Hide native OS splash screen seamlessly once React JS splash view is mounted
-    if (SplashScreen?.hideAsync) {
-      SplashScreen.hideAsync().catch(() => {});
-    }
-
-    // Minimum splash display duration for smooth transition without flicker
-    const minTimer = setTimeout(() => {
-      setMinSplashDone(true);
-    }, 1500);
-
-    // Hard maximum limit: Splash screen MUST finish within 5 seconds under any condition
-    const maxTimer = setTimeout(() => {
-      setInitializing(false);
-      setMinSplashDone(true);
-    }, 5000);
-
-    return () => {
-      clearTimeout(minTimer);
-      clearTimeout(maxTimer);
-    };
-  }, []);
-
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors);
 
@@ -162,46 +138,109 @@ export default function App() {
     },
   };
 
-  // Auth State Listener
+  // Auth State Listener: waits for SDK initial session resolution and persistent user state
   useEffect(() => {
+    let isMounted = true;
+
     const unsub = authService.onAuthStateChanged(async (user) => {
       try {
         if (user) {
-          const appUser = await authService.getAppUser(user.uid);
-          setCurrentAppUser(appUser);
-          if (appUser?.id) {
-            notificationService.registerForPushNotificationsAsync(appUser.id).catch(() => {});
+          // 1. Immediately restore cached user profile if present
+          const cachedUser = await authService.getCachedAppUser(user.email || '');
+          if (cachedUser && isMounted) {
+            setCurrentAppUser(cachedUser);
           }
-          if (user.email) {
-            const teams = await authService.getUserTeams(user.email);
-            setUserTeams(teams);
+
+          // 2. Fetch fresh profile from server/cache
+          const appUser = await authService.getAppUser(user.uid, user.email || undefined);
+          if (isMounted) {
+            if (appUser) {
+              setCurrentAppUser(appUser);
+            } else if (!cachedUser) {
+              const fallback: AppUser = {
+                id: user.uid,
+                name: user.displayName || user.email?.split('@')[0] || 'User',
+                email: user.email || '',
+                phone: user.phoneNumber || '',
+                role: 'user',
+                teamId: '',
+                walletBalance: 0.0,
+                currency: 'PKR',
+                createdAt: new Date(),
+              };
+              setCurrentAppUser(fallback);
+            }
+
+            if (appUser?.id || cachedUser?.id) {
+              notificationService.registerForPushNotificationsAsync(appUser?.id || cachedUser!.id).catch(() => {});
+            }
+
+            if (user.email) {
+              const teams = await authService.getUserTeams(user.email);
+              if (isMounted && teams) {
+                setUserTeams(teams);
+              }
+            }
           }
         } else {
+          if (isMounted) {
+            setCurrentAppUser(null);
+            setUserTeams([]);
+            setExpenses([]);
+            setMembers([]);
+          }
+        }
+      } catch (e) {
+        // Network or temporary failure: preserve session for authenticated user
+        if (user && isMounted) {
+          const cachedUser = await authService.getCachedAppUser(user.email || '');
+          if (cachedUser) {
+            setCurrentAppUser(cachedUser);
+          } else {
+            setCurrentAppUser({
+              id: user.uid,
+              name: user.displayName || user.email?.split('@')[0] || 'User',
+              email: user.email || '',
+              phone: user.phoneNumber || '',
+              role: 'user',
+              teamId: '',
+              walletBalance: 0.0,
+              currency: 'PKR',
+              createdAt: new Date(),
+            });
+          }
+        } else if (isMounted) {
           setCurrentAppUser(null);
           setUserTeams([]);
         }
-      } catch (e) {
-        setCurrentAppUser(null);
-        setUserTeams([]);
       } finally {
-        setInitializing(false);
+        if (isMounted) {
+          setInitializing(false);
+        }
       }
     });
-    return unsub;
+
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, []);
 
-  // Smoothly fade out splash screen when auth initialization and min duration finish
+  // Smoothly fade out splash screen once session initialization finishes
   useEffect(() => {
-    if ((!initializing && minSplashDone) || (!splashMounted && minSplashDone)) {
+    if (!initializing) {
+      if (SplashScreen?.hideAsync) {
+        SplashScreen.hideAsync().catch(() => {});
+      }
       Animated.timing(splashOpacity, {
         toValue: 0,
-        duration: 350,
+        duration: 280,
         useNativeDriver: true,
       }).start(() => {
         setSplashMounted(false);
       });
     }
-  }, [initializing, minSplashDone]);
+  }, [initializing]);
 
   // Real-time Database Listeners when logged in
   useEffect(() => {
@@ -235,40 +274,42 @@ export default function App() {
       <SafeAreaProvider>
         <StatusBar style={darkMode ? 'light' : 'dark'} />
         <CustomToast />
-        <NavigationContainer theme={navigationTheme}>
-          <Stack.Navigator 
-            screenOptions={{ 
-              headerShown: false,
-              cardStyleInterpolator: ({ current, layouts }) => ({
-                cardStyle: {
-                  transform: [
-                    {
-                      translateX: current.progress.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [layouts.screen.width, 0],
-                      }),
-                    },
-                  ],
-                  opacity: current.progress.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.5, 1],
-                  }),
-                },
-              }),
-            }}
-          >
-            {currentAppUser ? (
-              <>
-                <Stack.Screen name="MainTabs" component={TabNavigator} />
-                <Stack.Screen name="AddExpense" component={AddExpenseScreen} />
-                <Stack.Screen name="UserDetail" component={UserDetailScreen} />
-                <Stack.Screen name="MoneyCircle" component={MoneyCircleScreen} />
-              </>
-            ) : (
-              <Stack.Screen name="Login" component={LoginScreen} />
-            )}
-          </Stack.Navigator>
-        </NavigationContainer>
+        {!initializing && (
+          <NavigationContainer theme={navigationTheme}>
+            <Stack.Navigator 
+              screenOptions={{ 
+                headerShown: false,
+                cardStyleInterpolator: ({ current, layouts }) => ({
+                  cardStyle: {
+                    transform: [
+                      {
+                        translateX: current.progress.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [layouts.screen.width, 0],
+                        }),
+                      },
+                    ],
+                    opacity: current.progress.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.5, 1],
+                    }),
+                  },
+                }),
+              }}
+            >
+              {currentAppUser ? (
+                <>
+                  <Stack.Screen name="MainTabs" component={TabNavigator} />
+                  <Stack.Screen name="AddExpense" component={AddExpenseScreen} />
+                  <Stack.Screen name="UserDetail" component={UserDetailScreen} />
+                  <Stack.Screen name="MoneyCircle" component={MoneyCircleScreen} />
+                </>
+              ) : (
+                <Stack.Screen name="Login" component={LoginScreen} />
+              )}
+            </Stack.Navigator>
+          </NavigationContainer>
+        )}
 
         {/* Animated Splash Screen Overlay (prevents root component unmount flicker) */}
         {(initializing || splashMounted) && (
@@ -278,11 +319,12 @@ export default function App() {
               StyleSheet.absoluteFill,
               { 
                 zIndex: 99999,
+                elevation: 99999,
                 opacity: splashOpacity,
                 backgroundColor: darkMode ? '#121212' : '#FFFFFF' 
               }
             ]}
-            pointerEvents={!initializing && minSplashDone ? 'none' : 'auto'}
+            pointerEvents={initializing ? 'auto' : 'none'}
           >
             <View style={{ width: 140, height: 140, backgroundColor: '#FFFFFF', borderRadius: 28, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 }}>
               <Image

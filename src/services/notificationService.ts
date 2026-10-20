@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 
 const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
 
-export type NotificationType = 'newExpense' | 'editExpense' | 'newMember' | 'walletUpdates' | 'adjustments' | 'transfers' | 'monthlyReports';
+export type NotificationType = 'newExpense' | 'editExpense' | 'newMember' | 'walletUpdates' | 'adjustments' | 'transfers' | 'monthlyReports' | 'moneyCircle';
 
 let Notifications: typeof import('expo-notifications') | null = null;
 
@@ -117,39 +117,38 @@ export const notificationService = {
     }
   },
 
-  notify: async (teamId: string, title: string, desc: string, notifType?: NotificationType) => {
+  notify: async (
+    teamId: string, 
+    title: string, 
+    desc: string, 
+    notifType?: NotificationType, 
+    targetUserIds?: string[]
+  ) => {
     if (!teamId) return;
 
     const typeKey = notifType || 'newExpense';
 
-    // 1. ALWAYS write to Firestore (ensures in-app menu and unread notification count badge work for all members)
+    // 1. ALWAYS write to Firestore (ensures in-app menu and unread notification count badge work)
     try {
       const notifRef = doc(collection(db, 'notifications'));
-      await setDoc(notifRef, {
+      const notifPayload: any = {
         teamId,
         title,
         desc,
         notifType: typeKey,
         createdAt: Timestamp.now()
-      });
+      };
+      if (targetUserIds && targetUserIds.length > 0) {
+        notifPayload.targetUserIds = targetUserIds;
+      }
+      await setDoc(notifRef, notifPayload);
     } catch (e) {
       console.error('Failed to save notification to database:', e);
     }
 
-    // 2. REMOTE CROSS-DEVICE PUSH NOTIFICATION (Sends to all other team members' devices)
+    // 2. REMOTE CROSS-DEVICE PUSH NOTIFICATION (Sends to target users or all other team members)
     try {
       const currentUserId = auth.currentUser?.uid;
-      const teamSnap = await getDoc(doc(db, 'teams', teamId));
-
-      let memberIds: string[] = [];
-      if (teamSnap.exists()) {
-        memberIds = teamSnap.data()?.memberIds || [];
-      }
-
-      // Also query users table by teamId to catch any members not listed directly in team.memberIds
-      const usersQuery = query(collection(db, 'users'), where('teamId', '==', teamId));
-      const usersSnap = await getDocs(usersQuery).catch(() => null);
-
       const recipientTokensSet = new Set<string>();
 
       const isSelfUser = (id: string): boolean => {
@@ -167,16 +166,15 @@ export const notificationService = {
         return true;
       };
 
-      // A. Check members from memberIds
-      if (memberIds.length > 0) {
-        for (const recipientId of memberIds) {
+      if (targetUserIds && targetUserIds.length > 0) {
+        // Targeted notification (e.g. Money Circle between specific members)
+        for (const recipientId of targetUserIds) {
           if (isSelfUser(recipientId)) continue;
           try {
             let uData: any = null;
             const uSnap = await getDoc(doc(db, 'users', recipientId));
             if (uSnap.exists()) uData = uSnap.data();
 
-            // Fallback: If no pushToken on full recipientId, check base uid (before '_')
             if (!uData?.pushToken && recipientId.includes('_')) {
               const baseUid = recipientId.split('_')[0];
               const baseSnap = await getDoc(doc(db, 'users', baseUid));
@@ -187,21 +185,54 @@ export const notificationService = {
               recipientTokensSet.add(uData.pushToken);
             }
           } catch (err) {
-            console.error(`Failed to fetch push token for user ${recipientId}:`, err);
+            console.error(`Failed to fetch push token for target user ${recipientId}:`, err);
           }
         }
-      }
+      } else {
+        // Team-wide notification (e.g. expenses, team announcements)
+        const teamSnap = await getDoc(doc(db, 'teams', teamId));
 
-      // B. Check users from team query
-      if (usersSnap && !usersSnap.empty) {
-        usersSnap.docs.forEach(uDoc => {
-          if (!isSelfUser(uDoc.id)) {
-            const uData = uDoc.data();
-            if (isNotificationAllowedForUser(uData) && uData?.pushToken && typeof uData.pushToken === 'string' && uData.pushToken.trim().length > 0) {
-              recipientTokensSet.add(uData.pushToken);
+        let memberIds: string[] = [];
+        if (teamSnap.exists()) {
+          memberIds = teamSnap.data()?.memberIds || [];
+        }
+
+        const usersQuery = query(collection(db, 'users'), where('teamId', '==', teamId));
+        const usersSnap = await getDocs(usersQuery).catch(() => null);
+
+        if (memberIds.length > 0) {
+          for (const recipientId of memberIds) {
+            if (isSelfUser(recipientId)) continue;
+            try {
+              let uData: any = null;
+              const uSnap = await getDoc(doc(db, 'users', recipientId));
+              if (uSnap.exists()) uData = uSnap.data();
+
+              if (!uData?.pushToken && recipientId.includes('_')) {
+                const baseUid = recipientId.split('_')[0];
+                const baseSnap = await getDoc(doc(db, 'users', baseUid));
+                if (baseSnap.exists()) uData = baseSnap.data();
+              }
+
+              if (uData && isNotificationAllowedForUser(uData) && uData?.pushToken && typeof uData.pushToken === 'string' && uData.pushToken.trim().length > 0) {
+                recipientTokensSet.add(uData.pushToken);
+              }
+            } catch (err) {
+              console.error(`Failed to fetch push token for user ${recipientId}:`, err);
             }
           }
-        });
+        }
+
+        if (usersSnap && !usersSnap.empty) {
+          usersSnap.docs.forEach(uDoc => {
+            if (!isSelfUser(uDoc.id)) {
+              const uData = uDoc.data();
+              if (isNotificationAllowedForUser(uData) && uData?.pushToken && typeof uData.pushToken === 'string' && uData.pushToken.trim().length > 0) {
+                recipientTokensSet.add(uData.pushToken);
+              }
+            }
+          });
+        }
       }
 
       const recipientTokens = Array.from(recipientTokensSet);

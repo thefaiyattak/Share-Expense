@@ -116,11 +116,32 @@ export const authService = {
     }
   },
 
-  joinTeam: async (teamId: string): Promise<AppUser> => {
+  extractInviteCode: (text: string): string => {
+    if (!text) return '';
+    const trimmed = text.trim();
+    // 1. If prefixed with a label like "Team ID:" or "Invite Code:"
+    const labeledMatch = trimmed.match(/(?:Team ID|Invite Code|Code)[:\s]+([A-Za-z0-9]{4,16})/i);
+    if (labeledMatch && labeledMatch[1]) {
+      return labeledMatch[1].toUpperCase();
+    }
+    // 2. If the text contains an isolated standard 8-character alphanumeric code among other words
+    const words = trimmed.split(/[\s\n\r,.:;!?"'()[\]{}]+/).filter(Boolean);
+    const eightCharWord = words.find(w => /^[A-Za-z0-9]{8}$/.test(w));
+    if (eightCharWord) {
+      return eightCharWord.toUpperCase();
+    }
+    // 3. Fallback: strip punctuation like trailing periods, quotes, colons, or whitespace
+    return trimmed.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  },
+
+  joinTeam: async (rawTeamId: string): Promise<AppUser> => {
     const user = auth.currentUser;
     if (!user) throw new Error('Not logged in');
     const uid = user.uid;
     const email = user.email!;
+
+    const teamId = authService.extractInviteCode(rawTeamId);
+    if (!teamId) throw new Error('Invalid invite code');
 
     const teamSnap = await getDoc(doc(db, 'teams', teamId));
     if (!teamSnap.exists()) throw new Error('Team not found.');
@@ -292,23 +313,46 @@ export const authService = {
     }
   },
 
-  getAppUser: async (uid: string): Promise<AppUser | null> => {
-    const email = auth.currentUser?.email;
-    if (!email) return null;
-    const q = query(collection(db, 'users'), where('email', '==', email));
-    const snap = await getDocs(q);
-    if (snap.empty) return null;
-
-    let savedDocId: string | null = null;
+  getCachedAppUser: async (email?: string): Promise<AppUser | null> => {
     try {
-      savedDocId = await appStorage.getItem(`@last_active_user_doc_id_${email}`);
+      const activeEmail = email || auth.currentUser?.email;
+      if (activeEmail) {
+        const cached = await appStorage.getItem(`@cached_app_user_${activeEmail}`);
+        if (cached) return JSON.parse(cached);
+      }
+      const genericCached = await appStorage.getItem('@last_active_user_cache');
+      if (genericCached) return JSON.parse(genericCached);
     } catch (_) {}
+    return null;
+  },
 
-    let d = snap.docs[0];
-    if (savedDocId) {
-      const match = snap.docs.find(docItem => docItem.id === savedDocId);
-      if (match) {
-        d = match;
+  getAppUser: async (uid: string, fallbackEmail?: string): Promise<AppUser | null> => {
+    const email = fallbackEmail || auth.currentUser?.email;
+    if (!email) return null;
+    try {
+      const q = query(collection(db, 'users'), where('email', '==', email));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        return await authService.getCachedAppUser(email);
+      }
+
+      let savedDocId: string | null = null;
+      try {
+        savedDocId = await appStorage.getItem(`@last_active_user_doc_id_${email}`);
+      } catch (_) {}
+
+      let d = snap.docs[0];
+      if (savedDocId) {
+        const match = snap.docs.find(docItem => docItem.id === savedDocId);
+        if (match) {
+          d = match;
+        } else {
+          const withTeam = snap.docs.find(docItem => {
+            const data = docItem.data();
+            return data && data.teamId;
+          });
+          d = withTeam || snap.docs[0];
+        }
       } else {
         const withTeam = snap.docs.find(docItem => {
           const data = docItem.data();
@@ -316,60 +360,79 @@ export const authService = {
         });
         d = withTeam || snap.docs[0];
       }
-    } else {
-      const withTeam = snap.docs.find(docItem => {
-        const data = docItem.data();
-        return data && data.teamId;
-      });
-      d = withTeam || snap.docs[0];
-    }
-    const userDocRef = doc(db, 'users', d.id);
-    const data = d.data();
+      const userDocRef = doc(db, 'users', d.id);
+      const data = d.data();
 
-    // Auto-reactivate user if deactivated or pending deletion
-    if (data.deactivated || data.deleted) {
-      const wasDeleted = data.deleted;
-      const updatedFields: any = {
-        deactivated: false,
-        deleted: false,
-        deleteAt: null
-      };
-      await updateDoc(userDocRef, updatedFields);
-      
-      // If they were pending deletion, notify the group that they have returned/restored their account
-      if (wasDeleted && data.teamId) {
-        const notifRef = doc(collection(db, 'notifications'));
-        await setDoc(notifRef, {
-          teamId: data.teamId,
-          title: 'Account Restored',
-          desc: `${data.name || 'A member'} has logged back in and restored their account.`,
-          createdAt: new Date()
-        });
+      // Auto-reactivate user if deactivated or pending deletion
+      if (data.deactivated || data.deleted) {
+        const wasDeleted = data.deleted;
+        const updatedFields: any = {
+          deactivated: false,
+          deleted: false,
+          deleteAt: null
+        };
+        await updateDoc(userDocRef, updatedFields);
+        
+        // If they were pending deletion, notify the group that they have returned/restored their account
+        if (wasDeleted && data.teamId) {
+          const notifRef = doc(collection(db, 'notifications'));
+          await setDoc(notifRef, {
+            teamId: data.teamId,
+            title: 'Account Restored',
+            desc: `${data.name || 'A member'} has logged back in and restored their account.`,
+            createdAt: new Date()
+          });
+        }
+        
+        const restoredUser = { id: d.id, ...data, ...updatedFields } as unknown as AppUser;
+        try {
+          await appStorage.setItem(`@cached_app_user_${email}`, JSON.stringify(restoredUser));
+          await appStorage.setItem('@last_active_user_cache', JSON.stringify(restoredUser));
+        } catch (_) {}
+        return restoredUser;
       }
-      
-      return { id: d.id, ...data, ...updatedFields } as unknown as AppUser;
-    }
 
-    return { id: d.id, ...data } as unknown as AppUser;
+      const appUser = { id: d.id, ...data } as unknown as AppUser;
+      try {
+        await appStorage.setItem(`@cached_app_user_${email}`, JSON.stringify(appUser));
+        await appStorage.setItem('@last_active_user_cache', JSON.stringify(appUser));
+      } catch (_) {}
+      return appUser;
+    } catch (err) {
+      // Offline fallback: load from persistent local cache
+      return await authService.getCachedAppUser(email);
+    }
   },
 
   getUserTeams: async (email: string): Promise<any[]> => {
-    const q = query(collection(db, 'users'), where('email', '==', email));
-    const snap = await getDocs(q);
-    const teamPromises = snap.docs.map(async (uDoc) => {
-      const u = uDoc.data() as AppUser;
-      if (!u.teamId) return null;
-      const tSnap = await getDoc(doc(db, 'teams', u.teamId));
-      return {
-        teamId: u.teamId,
-        teamName: tSnap.exists() ? (tSnap.data()?.name || 'Unknown') : 'Unknown',
-        groupImageUrl: tSnap.exists() ? (tSnap.data()?.groupImageUrl || '') : '',
-        role: u.role === 'admin' ? 'Admin' : 'Member',
-        userDocId: uDoc.id
-      };
-    });
-    const results = await Promise.all(teamPromises);
-    return results.filter(Boolean) as any[];
+    try {
+      const q = query(collection(db, 'users'), where('email', '==', email));
+      const snap = await getDocs(q);
+      const teamPromises = snap.docs.map(async (uDoc) => {
+        const u = uDoc.data() as AppUser;
+        if (!u.teamId) return null;
+        const tSnap = await getDoc(doc(db, 'teams', u.teamId));
+        return {
+          teamId: u.teamId,
+          teamName: tSnap.exists() ? (tSnap.data()?.name || 'Unknown') : 'Unknown',
+          groupImageUrl: tSnap.exists() ? (tSnap.data()?.groupImageUrl || '') : '',
+          role: u.role === 'admin' ? 'Admin' : 'Member',
+          userDocId: uDoc.id
+        };
+      });
+      const results = await Promise.all(teamPromises);
+      const teams = results.filter(Boolean) as any[];
+      try {
+        await appStorage.setItem(`@cached_user_teams_${email}`, JSON.stringify(teams));
+      } catch (_) {}
+      return teams;
+    } catch (err) {
+      try {
+        const cached = await appStorage.getItem(`@cached_user_teams_${email}`);
+        if (cached) return JSON.parse(cached);
+      } catch (_) {}
+      return [];
+    }
   },
 
   createTeam: async (teamName: string): Promise<string> => {
@@ -634,6 +697,14 @@ export const authService = {
   },
 
   signOut: async () => {
+    try {
+      const email = auth.currentUser?.email;
+      if (email) {
+        await appStorage.removeItem(`@cached_app_user_${email}`);
+        await appStorage.removeItem(`@cached_user_teams_${email}`);
+      }
+      await appStorage.removeItem('@last_active_user_cache');
+    } catch (_) {}
     try {
       const gsignin = require('@react-native-google-signin/google-signin');
       if (gsignin && gsignin.GoogleSignin) {
