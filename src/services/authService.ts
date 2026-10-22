@@ -1,7 +1,7 @@
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut as fbSignOut, 
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut as fbSignOut,
   sendPasswordResetEmail as fbResetEmail,
   sendEmailVerification,
   updatePassword,
@@ -30,17 +30,17 @@ const friendlyAuthError = (e: any): string => {
   };
   return map[code] || e?.message || 'An unexpected error occurred.';
 };
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
-  deleteDoc, 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  limit, 
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  limit,
   onSnapshot,
   arrayUnion,
   arrayRemove
@@ -108,7 +108,7 @@ export const authService = {
       await setDoc(doc(db, 'users', uid), newUser);
       try {
         await appStorage.setItem(`@last_active_user_doc_id_${email}`, uid);
-      } catch (_) {}
+      } catch (_) { }
       return { user: newUser, isNew: true };
     } else {
       const appUser = await authService.getAppUser(uid);
@@ -152,19 +152,28 @@ export const authService = {
       return { id: userDocId, ...userDocSnap.data() } as unknown as AppUser;
     }
 
-    const q = query(collection(db, 'users'), where('email', '==', email), limit(1));
+    const q = query(collection(db, 'users'), where('email', '==', email));
     const existingSnap = await getDocs(q);
-    const name = !existingSnap.empty ? (existingSnap.docs[0].data().name || 'Member') : email.split('@')[0];
+    const docWithImage = existingSnap.docs.find(d => d.data()?.profileImageUrl);
+    const existingData = docWithImage ? docWithImage.data() : (!existingSnap.empty ? existingSnap.docs[0].data() : null);
+    const name = existingData?.name || email.split('@')[0];
+    const profileImageUrl = existingData?.profileImageUrl || undefined;
+    const avatarColor = existingData?.avatarColor || undefined;
+    const bio = existingData?.bio || '';
+    const phone = existingData?.phone || '';
 
     const newUser: AppUser = {
       id: userDocId,
       name,
       email,
-      phone: '',
+      phone,
       role: 'user',
       teamId,
       walletBalance: 0.0,
       currency: 'Rs.',
+      ...(profileImageUrl ? { profileImageUrl } : {}),
+      ...(avatarColor ? { avatarColor } : {}),
+      ...(bio ? { bio } : {}),
       createdAt: new Date()
     };
 
@@ -174,7 +183,7 @@ export const authService = {
     });
     try {
       await appStorage.setItem(`@last_active_user_doc_id_${email}`, userDocId);
-    } catch (_) {}
+    } catch (_) { }
 
     await notificationService.notify(
       teamId,
@@ -210,6 +219,14 @@ export const authService = {
 
     await setDoc(doc(db, 'teams', teamId), teamData);
 
+    const q = query(collection(db, 'users'), where('email', '==', params.email));
+    const existingSnap = await getDocs(q);
+    const docWithImage = existingSnap.docs.find(d => d.data()?.profileImageUrl);
+    const existingData = docWithImage ? docWithImage.data() : (!existingSnap.empty ? existingSnap.docs[0].data() : null);
+    const profileImageUrl = existingData?.profileImageUrl || undefined;
+    const avatarColor = existingData?.avatarColor || undefined;
+    const bio = existingData?.bio || '';
+
     const userDocId = `${uid}_${teamId}`;
     const user: AppUser = {
       id: userDocId,
@@ -221,13 +238,16 @@ export const authService = {
       walletBalance: 0.0,
       currency: 'Rs.',
       hasPasswordSet: true,
+      ...(profileImageUrl ? { profileImageUrl } : {}),
+      ...(avatarColor ? { avatarColor } : {}),
+      ...(bio ? { bio } : {}),
       createdAt: new Date()
     };
 
     await setDoc(doc(db, 'users', userDocId), user);
     try {
       await appStorage.setItem(`@last_active_user_doc_id_${params.email}`, userDocId);
-    } catch (_) {}
+    } catch (_) { }
     return user;
   },
 
@@ -248,6 +268,14 @@ export const authService = {
     const uid = cred.user.uid;
     const userDocId = `${uid}_${params.teamId}`;
 
+    const q = query(collection(db, 'users'), where('email', '==', params.email));
+    const existingSnap = await getDocs(q);
+    const docWithImage = existingSnap.docs.find(d => d.data()?.profileImageUrl);
+    const existingData = docWithImage ? docWithImage.data() : (!existingSnap.empty ? existingSnap.docs[0].data() : null);
+    const profileImageUrl = existingData?.profileImageUrl || undefined;
+    const avatarColor = existingData?.avatarColor || undefined;
+    const bio = existingData?.bio || '';
+
     const user: AppUser = {
       id: userDocId,
       name: params.name,
@@ -258,6 +286,9 @@ export const authService = {
       walletBalance: 0.0,
       currency: 'PKR',
       hasPasswordSet: true,
+      ...(profileImageUrl ? { profileImageUrl } : {}),
+      ...(avatarColor ? { avatarColor } : {}),
+      ...(bio ? { bio } : {}),
       createdAt: new Date()
     };
 
@@ -267,7 +298,7 @@ export const authService = {
     });
     try {
       await appStorage.setItem(`@last_active_user_doc_id_${params.email}`, userDocId);
-    } catch (_) {}
+    } catch (_) { }
 
     await notificationService.notify(
       params.teamId,
@@ -322,7 +353,7 @@ export const authService = {
       }
       const genericCached = await appStorage.getItem('@last_active_user_cache');
       if (genericCached) return JSON.parse(genericCached);
-    } catch (_) {}
+    } catch (_) { }
     return null;
   },
 
@@ -339,7 +370,7 @@ export const authService = {
       let savedDocId: string | null = null;
       try {
         savedDocId = await appStorage.getItem(`@last_active_user_doc_id_${email}`);
-      } catch (_) {}
+      } catch (_) { }
 
       let d = snap.docs[0];
       if (savedDocId) {
@@ -363,6 +394,28 @@ export const authService = {
       const userDocRef = doc(db, 'users', d.id);
       const data = d.data();
 
+      // Ensure profileImageUrl is shared across all groups the user is in
+      if (!data.profileImageUrl) {
+        const docWithImage = snap.docs.find(docItem => docItem.data()?.profileImageUrl);
+        if (docWithImage) {
+          data.profileImageUrl = docWithImage.data().profileImageUrl;
+          updateDoc(userDocRef, { profileImageUrl: data.profileImageUrl }).catch(() => { });
+        } else {
+          const cached = await authService.getCachedAppUser(email);
+          if (cached?.profileImageUrl) {
+            data.profileImageUrl = cached.profileImageUrl;
+            updateDoc(userDocRef, { profileImageUrl: cached.profileImageUrl }).catch(() => { });
+          }
+        }
+      } else {
+        // Backfill any group docs for this user that are missing profileImageUrl
+        snap.docs.forEach(docItem => {
+          if (docItem.id !== d.id && !docItem.data()?.profileImageUrl) {
+            updateDoc(doc(db, 'users', docItem.id), { profileImageUrl: data.profileImageUrl }).catch(() => { });
+          }
+        });
+      }
+
       // Auto-reactivate user if deactivated or pending deletion
       if (data.deactivated || data.deleted) {
         const wasDeleted = data.deleted;
@@ -372,7 +425,7 @@ export const authService = {
           deleteAt: null
         };
         await updateDoc(userDocRef, updatedFields);
-        
+
         // If they were pending deletion, notify the group that they have returned/restored their account
         if (wasDeleted && data.teamId) {
           const notifRef = doc(collection(db, 'notifications'));
@@ -383,12 +436,12 @@ export const authService = {
             createdAt: new Date()
           });
         }
-        
+
         const restoredUser = { id: d.id, ...data, ...updatedFields } as unknown as AppUser;
         try {
           await appStorage.setItem(`@cached_app_user_${email}`, JSON.stringify(restoredUser));
           await appStorage.setItem('@last_active_user_cache', JSON.stringify(restoredUser));
-        } catch (_) {}
+        } catch (_) { }
         return restoredUser;
       }
 
@@ -396,7 +449,7 @@ export const authService = {
       try {
         await appStorage.setItem(`@cached_app_user_${email}`, JSON.stringify(appUser));
         await appStorage.setItem('@last_active_user_cache', JSON.stringify(appUser));
-      } catch (_) {}
+      } catch (_) { }
       return appUser;
     } catch (err) {
       // Offline fallback: load from persistent local cache
@@ -424,13 +477,13 @@ export const authService = {
       const teams = results.filter(Boolean) as any[];
       try {
         await appStorage.setItem(`@cached_user_teams_${email}`, JSON.stringify(teams));
-      } catch (_) {}
+      } catch (_) { }
       return teams;
     } catch (err) {
       try {
         const cached = await appStorage.getItem(`@cached_user_teams_${email}`);
         if (cached) return JSON.parse(cached);
-      } catch (_) {}
+      } catch (_) { }
       return [];
     }
   },
@@ -450,24 +503,33 @@ export const authService = {
       createdAt: new Date()
     });
 
-    const q = query(collection(db, 'users'), where('email', '==', email), limit(1));
+    const q = query(collection(db, 'users'), where('email', '==', email));
     const existingSnap = await getDocs(q);
-    const name = !existingSnap.empty ? (existingSnap.docs[0].data().name || 'Admin') : 'Admin';
+    const docWithImage = existingSnap.docs.find(d => d.data()?.profileImageUrl);
+    const existingData = docWithImage ? docWithImage.data() : (!existingSnap.empty ? existingSnap.docs[0].data() : null);
+    const name = existingData?.name || 'Admin';
+    const profileImageUrl = existingData?.profileImageUrl || undefined;
+    const avatarColor = existingData?.avatarColor || undefined;
+    const bio = existingData?.bio || '';
+    const phone = existingData?.phone || '';
 
     await setDoc(doc(db, 'users', `${uid}_${teamId}`), {
       id: `${uid}_${teamId}`,
       name,
       email,
-      phone: '',
+      phone,
       role: 'admin',
       teamId,
       walletBalance: 0,
       currency: 'Rs.',
+      ...(profileImageUrl ? { profileImageUrl } : {}),
+      ...(avatarColor ? { avatarColor } : {}),
+      ...(bio ? { bio } : {}),
       createdAt: new Date()
     });
     try {
       await appStorage.setItem(`@last_active_user_doc_id_${email}`, `${uid}_${teamId}`);
-    } catch (_) {}
+    } catch (_) { }
 
     return teamId;
   },
@@ -527,6 +589,74 @@ export const authService = {
     });
   },
 
+  syncProfileAcrossGroups: async (userId: string, data: Partial<AppUser>) => {
+    try {
+      let email = auth.currentUser?.email;
+      let baseUid = auth.currentUser?.uid;
+
+      if (!email) {
+        const userSnap = await getDoc(doc(db, 'users', userId));
+        if (userSnap.exists()) {
+          const udata = userSnap.data();
+          email = udata?.email;
+        }
+      }
+
+      if (!email) return;
+
+      const fieldsToSync: Record<string, any> = {};
+      if (data.profileImageUrl !== undefined) fieldsToSync.profileImageUrl = data.profileImageUrl;
+      if (data.avatarColor !== undefined) fieldsToSync.avatarColor = data.avatarColor;
+      if (data.bio !== undefined) fieldsToSync.bio = data.bio;
+      if (data.name !== undefined) fieldsToSync.name = data.name;
+
+      if (Object.keys(fieldsToSync).length === 0) return;
+
+      const q = query(collection(db, 'users'), where('email', '==', email));
+      const snap = await getDocs(q);
+
+      const updatePromises: Promise<any>[] = [];
+      const docIds = new Set<string>();
+
+      snap.docs.forEach(d => {
+        docIds.add(d.id);
+        updatePromises.push(updateDoc(doc(db, 'users', d.id), fieldsToSync).catch(() => { }));
+      });
+
+      if (baseUid && !docIds.has(baseUid)) {
+        updatePromises.push(
+          getDoc(doc(db, 'users', baseUid)).then(bSnap => {
+            if (bSnap.exists()) {
+              return updateDoc(doc(db, 'users', baseUid), fieldsToSync);
+            }
+          }).catch(() => { })
+        );
+      }
+
+      await Promise.all(updatePromises);
+
+      // Keep AsyncStorage user caches updated
+      try {
+        const cached = await appStorage.getItem(`@cached_app_user_${email}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const updated = { ...parsed, ...fieldsToSync };
+          await appStorage.setItem(`@cached_app_user_${email}`, JSON.stringify(updated));
+        }
+        const genericCached = await appStorage.getItem('@last_active_user_cache');
+        if (genericCached) {
+          const parsed = JSON.parse(genericCached);
+          if (parsed.email === email) {
+            const updated = { ...parsed, ...fieldsToSync };
+            await appStorage.setItem('@last_active_user_cache', JSON.stringify(updated));
+          }
+        }
+      } catch (_) { }
+    } catch (err) {
+      console.log('Error syncing profile across groups:', err);
+    }
+  },
+
   uploadProfileImage: async (userId: string, imageUri: string): Promise<string> => {
     try {
       const cleanId = userId.startsWith('group_') ? userId.replace('group_', '') : userId;
@@ -555,6 +685,7 @@ export const authService = {
           await updateDoc(doc(db, 'teams', cleanId), { groupImageUrl: url });
         } else {
           await updateDoc(doc(db, 'users', userId), { profileImageUrl: url });
+          await authService.syncProfileAcrossGroups(userId, { profileImageUrl: url });
         }
         return url;
       }
@@ -567,6 +698,7 @@ export const authService = {
         await updateDoc(doc(db, 'teams', cleanId), { groupImageUrl: imageUri });
       } else {
         await updateDoc(doc(db, 'users', userId), { profileImageUrl: imageUri });
+        await authService.syncProfileAcrossGroups(userId, { profileImageUrl: imageUri });
       }
       return imageUri;
     }
@@ -600,7 +732,7 @@ export const authService = {
         return imageUri;
       })();
 
-      const timeoutPromise = new Promise<string>((_, reject) => 
+      const timeoutPromise = new Promise<string>((_, reject) =>
         setTimeout(() => reject(new Error('Upload timeout')), 2500)
       );
 
@@ -613,6 +745,7 @@ export const authService = {
 
   updateProfile: async (userId: string, data: Partial<AppUser>) => {
     await updateDoc(doc(db, 'users', userId), data);
+    await authService.syncProfileAcrossGroups(userId, data);
   },
 
   switchActiveTeam: async (userDocId: string): Promise<AppUser> => {
@@ -622,7 +755,27 @@ export const authService = {
     if (data && data.email) {
       try {
         await appStorage.setItem(`@last_active_user_doc_id_${data.email}`, userDocId);
-      } catch (_) {}
+      } catch (_) { }
+
+      // If this group document is missing profileImageUrl, inherit from other docs or cache
+      if (!data.profileImageUrl) {
+        try {
+          let profileImg = '';
+          const q = query(collection(db, 'users'), where('email', '==', data.email));
+          const allDocs = await getDocs(q);
+          const docWithImg = allDocs.docs.find(d => d.data()?.profileImageUrl);
+          if (docWithImg) {
+            profileImg = docWithImg.data().profileImageUrl;
+          } else {
+            const cached = await authService.getCachedAppUser(data.email);
+            if (cached?.profileImageUrl) profileImg = cached.profileImageUrl;
+          }
+          if (profileImg) {
+            await updateDoc(doc(db, 'users', userDocId), { profileImageUrl: profileImg });
+            data.profileImageUrl = profileImg;
+          }
+        } catch (_) { }
+      }
     }
     return { id: snap.id, ...data } as unknown as AppUser;
   },
@@ -632,16 +785,27 @@ export const authService = {
     const q = query(collection(db, 'users'), where('email', '==', email));
     const snap = await getDocs(q);
     const personalDoc = snap.docs.find(d => !d.data()?.teamId);
+    const docWithImage = snap.docs.find(d => d.data()?.profileImageUrl);
+    const inheritedProfileImage = docWithImage?.data()?.profileImageUrl;
+    const inheritedAvatarColor = docWithImage?.data()?.avatarColor;
 
     let userObj: AppUser;
 
     if (personalDoc) {
       userObj = { id: personalDoc.id, ...personalDoc.data() } as unknown as AppUser;
+      if (!userObj.profileImageUrl && inheritedProfileImage) {
+        await updateDoc(doc(db, 'users', userObj.id), { profileImageUrl: inheritedProfileImage });
+        userObj.profileImageUrl = inheritedProfileImage;
+      }
     } else {
       const personalDocRef = doc(db, 'users', uid);
       const personalSnap = await getDoc(personalDocRef);
       if (personalSnap.exists()) {
         userObj = { id: personalSnap.id, ...personalSnap.data() } as unknown as AppUser;
+        if (!userObj.profileImageUrl && inheritedProfileImage) {
+          await updateDoc(personalDocRef, { profileImageUrl: inheritedProfileImage });
+          userObj.profileImageUrl = inheritedProfileImage;
+        }
       } else {
         userObj = {
           id: uid,
@@ -652,6 +816,8 @@ export const authService = {
           teamId: '',
           walletBalance: 0.0,
           currency: 'PKR',
+          ...(inheritedProfileImage ? { profileImageUrl: inheritedProfileImage } : {}),
+          ...(inheritedAvatarColor ? { avatarColor: inheritedAvatarColor } : {}),
           createdAt: new Date()
         };
         await setDoc(personalDocRef, userObj);
@@ -660,7 +826,7 @@ export const authService = {
 
     try {
       await appStorage.setItem(`@last_active_user_doc_id_${email}`, userObj.id);
-    } catch (_) {}
+    } catch (_) { }
 
     return userObj;
   },
@@ -675,7 +841,7 @@ export const authService = {
     if (userSnap.exists()) {
       const userData = userSnap.data();
       const deleteAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
-      
+
       await updateDoc(doc(db, 'users', userId), {
         deactivated: true,
         deleted: true,
@@ -704,13 +870,13 @@ export const authService = {
         await appStorage.removeItem(`@cached_user_teams_${email}`);
       }
       await appStorage.removeItem('@last_active_user_cache');
-    } catch (_) {}
+    } catch (_) { }
     try {
       const gsignin = require('@react-native-google-signin/google-signin');
       if (gsignin && gsignin.GoogleSignin) {
         await gsignin.GoogleSignin.signOut();
       }
-    } catch (_) {}
+    } catch (_) { }
     return fbSignOut(auth);
   },
 
@@ -731,7 +897,7 @@ export const authService = {
       await updatePassword(user, newPass);
       await updateDoc(doc(db, 'users', userId), { hasPasswordSet: true });
       // Send verification email so user confirms the change
-      try { await sendEmailVerification(user); } catch (_) {}
+      try { await sendEmailVerification(user); } catch (_) { }
     } catch (e: any) {
       throw new Error(friendlyAuthError(e));
     }
@@ -744,7 +910,7 @@ export const authService = {
       await updatePassword(user, newPass);
       await updateDoc(doc(db, 'users', userId), { hasPasswordSet: true });
       // Send verification email to confirm password was set
-      try { await sendEmailVerification(user); } catch (_) {}
+      try { await sendEmailVerification(user); } catch (_) { }
     } catch (e: any) {
       throw new Error(friendlyAuthError(e));
     }

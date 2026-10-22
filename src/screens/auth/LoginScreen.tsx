@@ -230,7 +230,7 @@ export default function LoginScreen() {
             style={{ width: 100, height: 100, marginBottom: 12, borderRadius: 20, backgroundColor: '#FFFFFF' }}
           />
           <Text style={styles.title}>Share Expense</Text>
-          <Text style={styles.subtitle}>Developed by DigitalAppsStudio in collaboration with fyntech</Text>
+          <Text style={styles.subtitle}>Developed by DigitalAppsStudio</Text>
         </View>
 
         <View style={styles.contentContainer}>

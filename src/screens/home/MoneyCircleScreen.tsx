@@ -8,6 +8,7 @@ import {
   Alert,
   RefreshControl,
   Platform,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -268,7 +269,11 @@ export default function MoneyCircleScreen() {
                 <View key={member.id} style={styles.memberCard}>
                   <View style={styles.memberCardTop}>
                     <View style={styles.memberAvatar}>
-                      <Text style={styles.memberAvatarText}>{initials}</Text>
+                      {member.profileImageUrl ? (
+                        <Image source={{ uri: member.profileImageUrl }} style={styles.memberAvatarImage} />
+                      ) : (
+                        <Text style={styles.memberAvatarText}>{initials}</Text>
+                      )}
                     </View>
                     <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={styles.memberName}>{member.name}</Text>
@@ -643,6 +648,12 @@ const getStyles = (colors: any, darkMode: boolean) =>
       backgroundColor: colors.primary + '18',
       alignItems: 'center',
       justifyContent: 'center',
+      overflow: 'hidden',
+    },
+    memberAvatarImage: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
     },
     memberAvatarText: {
       fontSize: 14,

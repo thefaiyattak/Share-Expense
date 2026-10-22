@@ -352,7 +352,7 @@ export default function App() {
               color: colors.textSecondary,
               textAlign: 'center',
             }}>
-              Developed by DigitalAppsStudio in collaboration with fyntech
+              Developed by DigitalAppsStudio
             </Text>
           </Animated.View>
         )}

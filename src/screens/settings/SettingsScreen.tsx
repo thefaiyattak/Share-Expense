@@ -1905,7 +1905,7 @@ export default function SettingsScreen() {
             </View>
 
             <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 18, marginBottom: 20 }}>
-              Smart shared expense tracker & wallet manager.{'\n'}Developed by <Text style={{ fontWeight: '600', color: colors.textPrimary }}>DigitalAppsStudio</Text> in collaboration with <Text style={{ fontWeight: '600', color: colors.textPrimary }}>fyntech</Text>
+              Smart shared expense tracker & wallet manager.{'\n'}Developed by <Text style={{ fontWeight: '600', color: colors.textPrimary }}>DigitalAppsStudio</Text>
             </Text>
 
             <TouchableOpacity

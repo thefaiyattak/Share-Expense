@@ -274,7 +274,7 @@ export const pdfService = {
         ` : ''}
 
         <div class="footer">
-          <div>Developed by DigitalAppsStudio in collaboration with fyntech</div>
+          <div>Developed by DigitalAppsStudio</div>
           <div>React Native Edition</div>
         </div>
       </body>
