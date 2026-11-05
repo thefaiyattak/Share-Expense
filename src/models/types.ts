@@ -24,7 +24,7 @@ export interface AppUser {
   hasPasswordSet?: boolean;
   deactivated?: boolean;
   deleted?: boolean;
-  deleteAt?: any;
+  deleteAt?: Date | null;
 }
 
 export interface Team {

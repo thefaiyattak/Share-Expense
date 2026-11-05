@@ -642,7 +642,7 @@ export default function ExpensesScreen() {
 
           let displayName = m.name;
           if (m.deleted && m.deleteAt) {
-            const deleteAtDate = m.deleteAt.toDate ? m.deleteAt.toDate() : new Date(m.deleteAt);
+            const deleteAtDate = typeof (m.deleteAt as any)?.toDate === 'function' ? (m.deleteAt as any).toDate() : new Date(m.deleteAt);
             const remainingDays = Math.ceil((deleteAtDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
             if (remainingDays > 0) {
               displayName = `${m.name} (Deleting in ${remainingDays}d)`;
