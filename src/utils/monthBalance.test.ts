@@ -5,6 +5,8 @@ import {
   toMonthKey,
   getMemberMonthDeposit,
   getMemberMonthSettled,
+  getNextMonthKey,
+  getPrevMonthKey,
 } from './monthBalance';
 import { AppUser } from '../models/types';
 
@@ -261,6 +263,138 @@ describe('monthBalance utility', () => {
         delta: 100,
       });
       expect(err).toBe('Nothing is pending for this month');
+    });
+  });
+
+  describe('Step 7: Carry to Next Month & Undo Carry', () => {
+    it('computes next and previous month keys across year boundaries', () => {
+      expect(getNextMonthKey('2026-10')).toBe('2026-11');
+      expect(getNextMonthKey('2026-12')).toBe('2027-01');
+      expect(getPrevMonthKey('2026-11')).toBe('2026-10');
+      expect(getPrevMonthKey('2027-01')).toBe('2026-12');
+    });
+
+    it('carrying positive surplus (+2485) clears current month to Settled and credits next month', () => {
+      // Month M (2026-10): Munir has remaining +2485
+      const munirOctBefore = createMockMember({
+        id: 'munir',
+        monthlyWallets: { '2026-10': 0 },
+      });
+      const octBefore = computeMemberMonth({
+        member: munirOctBefore,
+        monthKey: '2026-10',
+        spent: 5380,
+        share: 2895,
+      });
+      expect(octBefore.remaining).toBe(2485);
+      expect(octBefore.isSettled).toBe(false);
+
+      // Carry +2485 to 2026-11: monthlyCarriedOut['2026-10'] = 2485, monthlyCarryIn['2026-11'] = 2485
+      const munirOctAfter = createMockMember({
+        ...munirOctBefore,
+        monthlyCarriedOut: { '2026-10': 2485 },
+        monthlyCarryIn: { '2026-11': 2485 },
+      });
+
+      const octAfter = computeMemberMonth({
+        member: munirOctAfter,
+        monthKey: '2026-10',
+        spent: 5380,
+        share: 2895,
+      });
+      // Cleared to Settled
+      expect(octAfter.remaining).toBe(0);
+      expect(octAfter.carriedOut).toBe(2485);
+      expect(octAfter.isSettled).toBe(true);
+
+      // Verify double carry is blocked because remaining is 0
+      expect(octAfter.remaining !== 0).toBe(false);
+
+      // Month M+1 (2026-11): has carry-in credit of +2485
+      const novRes = computeMemberMonth({
+        member: munirOctAfter,
+        monthKey: '2026-11',
+        spent: 0,
+        share: 0,
+      });
+      expect(novRes.carryIn).toBe(2485);
+      expect(novRes.net).toBe(2485);
+      expect(novRes.remaining).toBe(2485);
+      expect(novRes.isReceiving).toBe(true);
+    });
+
+    it('carrying negative deficit (-1500) clears current month to Settled and debits next month', () => {
+      // Month M (2026-10): Member owes 1500
+      const debtorOctBefore = createMockMember({
+        monthlyWallets: { '2026-10': 0 },
+      });
+      const octBefore = computeMemberMonth({
+        member: debtorOctBefore,
+        monthKey: '2026-10',
+        spent: 0,
+        share: 1500,
+      });
+      expect(octBefore.remaining).toBe(-1500);
+
+      // Carry -1500 to next month
+      const debtorAfter = createMockMember({
+        monthlyCarriedOut: { '2026-10': -1500 },
+        monthlyCarryIn: { '2026-11': -1500 },
+      });
+
+      const octAfter = computeMemberMonth({
+        member: debtorAfter,
+        monthKey: '2026-10',
+        spent: 0,
+        share: 1500,
+      });
+      expect(octAfter.remaining).toBe(0);
+      expect(octAfter.carriedOut).toBe(-1500);
+      expect(octAfter.isSettled).toBe(true);
+
+      // Month M+1 has carry-in deficit of -1500
+      const novRes = computeMemberMonth({
+        member: debtorAfter,
+        monthKey: '2026-11',
+        spent: 0,
+        share: 0,
+      });
+      expect(novRes.carryIn).toBe(-1500);
+      expect(novRes.net).toBe(-1500);
+      expect(novRes.remaining).toBe(-1500);
+      expect(novRes.isReceiving).toBe(false);
+    });
+
+    it('undo carry reverses carry-out and carry-in, restoring pending balance', () => {
+      const memberCarried = createMockMember({
+        monthlyCarriedOut: { '2026-10': 2485 },
+        monthlyCarryIn: { '2026-11': 2485 },
+      });
+
+      // Undo carry: subtract 2485 from both
+      const memberUndone = createMockMember({
+        monthlyCarriedOut: { '2026-10': 0 },
+        monthlyCarryIn: { '2026-11': 0 },
+      });
+
+      const octRestored = computeMemberMonth({
+        member: memberUndone,
+        monthKey: '2026-10',
+        spent: 5380,
+        share: 2895,
+      });
+      expect(octRestored.remaining).toBe(2485);
+      expect(octRestored.carriedOut).toBe(0);
+      expect(octRestored.isSettled).toBe(false);
+
+      const novRestored = computeMemberMonth({
+        member: memberUndone,
+        monthKey: '2026-11',
+        spent: 0,
+        share: 0,
+      });
+      expect(novRestored.carryIn).toBe(0);
+      expect(novRestored.remaining).toBe(0);
     });
   });
 });

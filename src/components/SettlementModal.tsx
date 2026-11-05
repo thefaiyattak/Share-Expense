@@ -486,6 +486,18 @@ export default function SettlementModal({
                         </View>
                       </View>
 
+                      {/* Carry Over Strip if present */}
+                      {(item.carryIn || item.carriedOut) ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: colors.inputBg, borderRadius: 6 }}>
+                          <Ionicons name="swap-horizontal-outline" size={12} color={colors.primary} />
+                          <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                            {item.carryIn ? `Carried In: ${item.carryIn > 0 ? '+' : ''}${formatAmt(item.carryIn)}` : ''}
+                            {item.carryIn && item.carriedOut ? ' · ' : ''}
+                            {item.carriedOut ? `Carried Out: ${item.carriedOut > 0 ? '+' : ''}${formatAmt(item.carriedOut)}` : ''}
+                          </Text>
+                        </View>
+                      ) : null}
+
                       {/* Calculation Formula Strip */}
                       <View style={styles.smartFormulaBar}>
                         <Ionicons name="calculator-outline" size={13} color={colors.textTertiary} style={{ marginRight: 6 }} />

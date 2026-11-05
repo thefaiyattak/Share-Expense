@@ -13,6 +13,38 @@ export function toMonthKey(date: Date | string): string {
 }
 
 /**
+ * Returns next month key YYYY-MM
+ */
+export function getNextMonthKey(monthKey: string): string {
+  const parts = monthKey.split('-');
+  let year = parseInt(parts[0], 10);
+  let month = parseInt(parts[1], 10);
+  if (isNaN(year) || isNaN(month)) return '';
+  month += 1;
+  if (month > 12) {
+    month = 1;
+    year += 1;
+  }
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+/**
+ * Returns previous month key YYYY-MM
+ */
+export function getPrevMonthKey(monthKey: string): string {
+  const parts = monthKey.split('-');
+  let year = parseInt(parts[0], 10);
+  let month = parseInt(parts[1], 10);
+  if (isNaN(year) || isNaN(month)) return '';
+  month -= 1;
+  if (month < 1) {
+    month = 12;
+    year -= 1;
+  }
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+/**
  * Gets a member's wallet deposit for a given month, with legacy 2026-08 fallback.
  */
 export function getMemberMonthDeposit(member: AppUser | undefined | null, monthKey: string): number {
@@ -36,6 +68,24 @@ export function getMemberMonthSettled(member: AppUser | undefined | null, monthK
   return member.monthlySettlements[monthKey] || 0;
 }
 
+/**
+ * Gets a member's carry-in balance brought forward into a given month.
+ * Signed: +N credit carried from prior month, -N deficit carried from prior month.
+ */
+export function getMemberMonthCarryIn(member: AppUser | undefined | null, monthKey: string): number {
+  if (!member || !member.monthlyCarryIn) return 0;
+  return member.monthlyCarryIn[monthKey] || 0;
+}
+
+/**
+ * Gets a member's balance carried out of a given month into the next month.
+ * Signed: +N credit moved forward, -N deficit moved forward.
+ */
+export function getMemberMonthCarriedOut(member: AppUser | undefined | null, monthKey: string): number {
+  if (!member || !member.monthlyCarriedOut) return 0;
+  return member.monthlyCarriedOut[monthKey] || 0;
+}
+
 export interface MemberMonthParams {
   member: AppUser;
   monthKey: string;
@@ -47,6 +97,8 @@ export interface MemberMonthResult {
   deposit: number;
   spent: number;
   share: number;
+  carryIn: number;
+  carriedOut: number;
   net: number;
   settled: number;
   remaining: number;
@@ -56,8 +108,8 @@ export interface MemberMonthResult {
 
 /**
  * Computes month financial summary for a member:
- * net = round(deposit + spent - share)
- * remaining = net - settled
+ * net = round((deposit + carryIn + spent) - share)
+ * remaining = net - settled - carriedOut
  * isSettled = remaining === 0 and the month had activity
  */
 export function computeMemberMonth({
@@ -68,16 +120,21 @@ export function computeMemberMonth({
 }: MemberMonthParams): MemberMonthResult {
   const deposit = getMemberMonthDeposit(member, monthKey);
   const settled = getMemberMonthSettled(member, monthKey);
-  const net = Math.round(deposit + spent - share);
-  const remaining = net - settled;
-  const hasActivity = deposit !== 0 || spent !== 0 || share !== 0 || settled !== 0;
+  const carryIn = getMemberMonthCarryIn(member, monthKey);
+  const carriedOut = getMemberMonthCarriedOut(member, monthKey);
+
+  const net = Math.round((deposit + carryIn + spent) - share);
+  const remaining = net - settled - carriedOut;
+  const hasActivity = deposit !== 0 || spent !== 0 || share !== 0 || settled !== 0 || carryIn !== 0 || carriedOut !== 0;
   const isSettled = remaining === 0 && hasActivity;
   const isReceiving = remaining > 0;
 
   return {
     deposit,
-    spent,
-    share,
+    spent: Math.round(spent),
+    share: Math.round(share),
+    carryIn,
+    carriedOut,
     net,
     settled,
     remaining,
@@ -128,23 +185,21 @@ export function validateSettlement({
     }
   }
 
-  const newSettled = settled + delta;
+  const nextSettled = settled + delta;
 
   if (net > 0) {
-    if (newSettled < 0) {
+    if (nextSettled < 0) {
       return 'Reversal amount cannot exceed what has been settled';
     }
-    if (newSettled > net) {
-      const maxAllowed = Math.max(0, net - settled);
-      return `Amount is more than what is pending (max ${maxAllowed})`;
+    if (nextSettled > net) {
+      return `Amount is more than what is pending (max ${net - settled})`;
     }
   } else if (net < 0) {
-    if (newSettled > 0) {
+    if (nextSettled > 0) {
       return 'Reversal amount cannot exceed what has been settled';
     }
-    if (newSettled < net) {
-      const maxAllowed = Math.abs(net - settled);
-      return `Amount is more than what is pending (max ${maxAllowed})`;
+    if (nextSettled < net) {
+      return `Amount is more than what is pending (max ${Math.abs(net - settled)})`;
     }
   }
 

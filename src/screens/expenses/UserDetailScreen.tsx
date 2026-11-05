@@ -37,7 +37,7 @@ import { pdfService } from '../../services/pdfService';
 import { notificationService } from '../../services/notificationService';
 import { AppUser, UserRole } from '../../models/types';
 import { calculateIntegerPercentages } from '../../utils/math';
-import { computeMemberMonth, validateSettlement, getMemberMonthDeposit, getMemberMonthSettled } from '../../utils/monthBalance';
+import { computeMemberMonth, validateSettlement, getMemberMonthDeposit, getMemberMonthSettled, getNextMonthKey } from '../../utils/monthBalance';
 import ChangeHistoryModal from '../../components/ChangeHistoryModal';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
 
@@ -215,6 +215,8 @@ export default function UserDetailScreen() {
         deposit,
         spent: monthUserSpent,
         share: userMonthShare,
+        carryIn: 0,
+        carriedOut: 0,
         net,
         settled: 0,
         remaining: net,
@@ -477,48 +479,58 @@ export default function UserDetailScreen() {
       return;
     }
 
-    if (monthDisplayBalance === 0) {
+    if (memberMonth.remaining === 0) {
       Alert.alert('No Balance', 'There is no remaining positive or negative balance for this month to transfer.');
       return;
     }
 
-    // Determine target next month
-    const nextMonthDate = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 1);
-    const nextMonthKey = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const nextMonthKey = getNextMonthKey(selectedMonthKey);
+    const [ny, nm] = nextMonthKey.split('-');
+    const nextMonthDate = new Date(parseInt(ny, 10), parseInt(nm, 10) - 1, 1);
     const nextMonthName = nextMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-    const directionLabel = isMonthPositive ? 'Surplus (+)' : 'Deficit (-)';
-    const amountFormatted = formatAmount(monthDisplayBalance);
     const selectedMonthName = selectedMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const r = memberMonth.remaining;
+    const directionLabel = r > 0 ? 'Surplus (+)' : 'Deficit (-)';
+    const amountFormatted = formatAmount(Math.abs(r));
 
     Alert.alert(
       'Carry Over to Next Month',
-      `Are you sure you want to transfer the ${directionLabel} of ${amountFormatted} from ${selectedMonthName} into ${userName}'s ${nextMonthName} wallet?`,
+      `Are you sure you want to carry over the ${directionLabel} of ${amountFormatted} from ${selectedMonthName} into ${userName}'s ${nextMonthName} balance?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Transfer Balance',
+          text: 'Carry Over',
           onPress: async () => {
             setLoading(true);
             try {
-              const existingMonthlyWallets = userMemberObj?.monthlyWallets || {};
-              const nextMonthCurrentWallet = existingMonthlyWallets[nextMonthKey] ?? 0;
-              // If positive surplus: add to next month wallet (+). If negative deficit: deduct from wallet (-).
-              const netTransfer = isMonthPositive ? monthDisplayBalance : -monthDisplayBalance;
-              const nextMonthNewWallet = Math.max(0, nextMonthCurrentWallet + netTransfer);
+              await updateDoc(doc(db, 'users', userId), {
+                [`monthlyCarriedOut.${selectedMonthKey}`]: increment(r),
+                [`monthlyCarryIn.${nextMonthKey}`]: increment(r),
+              });
 
-              const updatedMonthlyWallets = {
-                ...existingMonthlyWallets,
-                [nextMonthKey]: nextMonthNewWallet
+              const updatedCarriedOut = {
+                ...(userMemberObj?.monthlyCarriedOut || {}),
+                [selectedMonthKey]: (userMemberObj?.monthlyCarriedOut?.[selectedMonthKey] || 0) + r,
+              };
+              const updatedCarryIn = {
+                ...(userMemberObj?.monthlyCarryIn || {}),
+                [nextMonthKey]: (userMemberObj?.monthlyCarryIn?.[nextMonthKey] || 0) + r,
               };
 
-              const now = new Date();
-              const isTargetCurrentMonth = nextMonthDate.getFullYear() === now.getFullYear() && nextMonthDate.getMonth() === now.getMonth();
+              setMembers(members.map(m => m.id === userId ? {
+                ...m,
+                monthlyCarriedOut: updatedCarriedOut,
+                monthlyCarryIn: updatedCarryIn,
+              } : m));
 
-              await updateDoc(doc(db, 'users', userId), {
-                monthlyWallets: updatedMonthlyWallets,
-                ...(isTargetCurrentMonth ? { walletBalance: nextMonthNewWallet } : {})
-              });
+              if (currentAppUser?.id === userId) {
+                setCurrentAppUser({
+                  ...currentAppUser,
+                  monthlyCarriedOut: updatedCarriedOut,
+                  monthlyCarryIn: updatedCarryIn,
+                });
+              }
 
               // LOG HISTORY AUDIT
               const auditItemName = `${selectedMonthName} Balance Carried into ${nextMonthName} for ${userName}`;
@@ -530,40 +542,99 @@ export default function UserDetailScreen() {
                 itemName: auditItemName,
                 userId: currentAppUser?.id || '',
                 userName: currentAppUser?.name || 'Admin',
-                previousData: { targetMonthWallet: nextMonthCurrentWallet, targetMonthKey: nextMonthKey },
-                newData: {
-                  targetMonthWallet: nextMonthNewWallet,
-                  netTransfer,
-                  fromMonth: selectedMonthName,
-                  toMonth: nextMonthName,
-                  transferAmount: monthDisplayBalance,
-                  isPositive: isMonthPositive
-                }
+                previousData: { fromMonth: selectedMonthKey, toMonth: nextMonthKey, remaining: r },
+                newData: { fromMonth: selectedMonthKey, toMonth: nextMonthKey, carriedAmount: r },
               });
 
               // PUSH REAL-TIME NOTIFICATION
               const targetTeamId = activeTeamId || currentAppUser?.teamId;
               if (targetTeamId) {
-                const notifTitle = 'Month-End Balance Transferred';
-                const notifDesc = `Admin ${currentAppUser?.name || ''} transferred ${directionLabel} of ${amountFormatted} from ${selectedMonthName} into ${userName}'s ${nextMonthName} wallet.`;
-                await notificationService.notify(targetTeamId, notifTitle, notifDesc, 'transfers');
+                const notifTitle = 'Month Balance Carried Forward';
+                const notifDesc = `Admin ${currentAppUser?.name || ''} carried ${directionLabel} of ${amountFormatted} from ${selectedMonthName} to ${nextMonthName} for ${userName}.`;
+                notificationService.notify(targetTeamId, notifTitle, notifDesc, 'transfers').catch(err => {
+                  console.warn('Failed to send notification:', err);
+                });
               }
+
+              showToast(
+                `${amountFormatted} carried to ${nextMonthName}. Current month is now Settled.`,
+                'success',
+                'Carry Over Recorded'
+              );
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Failed to carry balance over');
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Handle Undoing Carry Over
+  const handleUndoCarry = () => {
+    if (currentAppUser?.role !== 'admin') {
+      Alert.alert('Access Denied', 'Only team admins can undo carry overs.');
+      return;
+    }
+
+    const c = memberMonth.carriedOut;
+    if (c === 0) return;
+
+    const nextMonthKey = getNextMonthKey(selectedMonthKey);
+    const [ny, nm] = nextMonthKey.split('-');
+    const nextMonthDate = new Date(parseInt(ny, 10), parseInt(nm, 10) - 1, 1);
+    const nextMonthName = nextMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const selectedMonthName = selectedMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const amountFormatted = formatAmount(Math.abs(c));
+
+    Alert.alert(
+      'Undo Carry Over',
+      `Undo carry of ${amountFormatted} to ${nextMonthName}? This will restore the pending balance in ${selectedMonthName}.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Undo Carry',
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await updateDoc(doc(db, 'users', userId), {
+                [`monthlyCarriedOut.${selectedMonthKey}`]: increment(-c),
+                [`monthlyCarryIn.${nextMonthKey}`]: increment(-c),
+              });
+
+              const updatedCarriedOut = {
+                ...(userMemberObj?.monthlyCarriedOut || {}),
+                [selectedMonthKey]: (userMemberObj?.monthlyCarriedOut?.[selectedMonthKey] || 0) - c,
+              };
+              const updatedCarryIn = {
+                ...(userMemberObj?.monthlyCarryIn || {}),
+                [nextMonthKey]: (userMemberObj?.monthlyCarryIn?.[nextMonthKey] || 0) - c,
+              };
+
+              setMembers(members.map(m => m.id === userId ? {
+                ...m,
+                monthlyCarriedOut: updatedCarriedOut,
+                monthlyCarryIn: updatedCarryIn,
+              } : m));
 
               if (currentAppUser?.id === userId) {
                 setCurrentAppUser({
                   ...currentAppUser,
-                  monthlyWallets: updatedMonthlyWallets,
-                  ...(isTargetCurrentMonth ? { walletBalance: nextMonthNewWallet } : {})
-                } as AppUser);
+                  monthlyCarriedOut: updatedCarriedOut,
+                  monthlyCarryIn: updatedCarryIn,
+                });
               }
 
-              Alert.alert(
-                'Transfer Complete',
-                `Transferred ${isMonthPositive ? '+' : '-'}${amountFormatted} from ${selectedMonthName} into ${nextMonthName} wallet (New Balance: ${formatAmount(nextMonthNewWallet)}).`
+              showToast(
+                'Carry over undone. Pending balance restored.',
+                'info',
+                'Carry Undone'
               );
-              navigation.goBack();
             } catch (e: any) {
-              Alert.alert('Error', e.message || 'Failed to transfer balance');
+              Alert.alert('Error', e.message || 'Failed to undo carry over');
             } finally {
               setLoading(false);
             }
@@ -838,61 +909,99 @@ export default function UserDetailScreen() {
             </View>
           </View>
 
+          {/* Carry Over Notice if present */}
+          {(memberMonth.carryIn !== 0 || memberMonth.carriedOut !== 0) && (
+            <View style={{ marginTop: 8, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: colors.inputBg, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border }}>
+              <Ionicons name="swap-horizontal-outline" size={15} color={colors.primary} />
+              <Text style={{ fontSize: 11.5, color: colors.textPrimary, flex: 1, fontWeight: '500' }}>
+                {memberMonth.carryIn !== 0 ? `Carried from previous month: ${memberMonth.carryIn > 0 ? '+' : ''}${formatAmount(memberMonth.carryIn)}` : ''}
+                {memberMonth.carryIn !== 0 && memberMonth.carriedOut !== 0 ? ' · ' : ''}
+                {memberMonth.carriedOut !== 0 ? `Carried to next month: ${memberMonth.carriedOut > 0 ? '+' : ''}${formatAmount(memberMonth.carriedOut)}` : ''}
+              </Text>
+            </View>
+          )}
+
           {/* Settlement Math Formula Breakdown Helper */}
           <View style={{ marginTop: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.surface, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border }}>
             <Ionicons name="information-circle-outline" size={14} color={colors.textSecondary} />
             <Text style={{ fontSize: 11, color: colors.textSecondary, flex: 1 }}>
-              Pending = (Deposit + Out of Pocket) − Your Share − Settled
+              Pending = (Deposit + Carry In + Out of Pocket) − Your Share − Settled − Carried Out
             </Text>
           </View>
 
           {/* Admin Month-End Settlement & Transfer Bar */}
           {currentAppUser?.role === 'admin' && (
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: colors.primary + '18',
-                  borderWidth: 1,
-                  borderColor: colors.primary + '40',
-                  borderRadius: 10,
-                  paddingVertical: 10,
-                  paddingHorizontal: 8
-                }}
-                onPress={() => {
-                  setAdjustAmountInput('');
-                  setAdjustReasonInput('');
-                  setAdjustModalVisible(true);
-                }}
-              >
-                <Ionicons name="create-outline" size={15} color={colors.primary} style={{ marginRight: 5 }} />
-                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>
-                  Adjust Pending (+/-)
-                </Text>
-              </TouchableOpacity>
+            <View style={{ marginTop: 10 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: colors.primary + '18',
+                    borderWidth: 1,
+                    borderColor: colors.primary + '40',
+                    borderRadius: 10,
+                    paddingVertical: 10,
+                    paddingHorizontal: 8
+                  }}
+                  onPress={openAdjustModal}
+                >
+                  <Ionicons name="create-outline" size={15} color={colors.primary} style={{ marginRight: 5 }} />
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>
+                    Adjust Pending (+/-)
+                  </Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: colors.primary,
-                  borderRadius: 10,
-                  paddingVertical: 10,
-                  paddingHorizontal: 8,
-                  elevation: 2
-                }}
-                onPress={handleTransferToNextMonth}
-              >
-                <Ionicons name="arrow-forward-circle-outline" size={16} color="#FFFFFF" style={{ marginRight: 5 }} />
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
-                  Carry to Next Month
-                </Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: memberMonth.remaining === 0 ? colors.inputBg : colors.primary,
+                    borderRadius: 10,
+                    paddingVertical: 10,
+                    paddingHorizontal: 8,
+                    elevation: memberMonth.remaining === 0 ? 0 : 2,
+                    opacity: memberMonth.remaining === 0 ? 0.6 : 1,
+                    borderWidth: memberMonth.remaining === 0 ? 1 : 0,
+                    borderColor: colors.border,
+                  }}
+                  disabled={memberMonth.remaining === 0}
+                  onPress={handleTransferToNextMonth}
+                >
+                  <Ionicons name="arrow-forward-circle-outline" size={16} color={memberMonth.remaining === 0 ? colors.textSecondary : '#FFFFFF'} style={{ marginRight: 5 }} />
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: memberMonth.remaining === 0 ? colors.textSecondary : '#FFFFFF' }}>
+                    Carry to Next Month
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Undo Carry Button when carriedOut is active */}
+              {memberMonth.carriedOut !== 0 && (
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: darkMode ? '#334155' : '#E2E8F0',
+                    borderRadius: 10,
+                    paddingVertical: 9,
+                    paddingHorizontal: 12,
+                    marginTop: 8,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                  onPress={handleUndoCarry}
+                >
+                  <Ionicons name="arrow-undo-outline" size={15} color={colors.textPrimary} style={{ marginRight: 6 }} />
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary }}>
+                    Undo Carry ({memberMonth.carriedOut > 0 ? '+' : ''}{formatAmount(memberMonth.carriedOut)} carried to next month)
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
 

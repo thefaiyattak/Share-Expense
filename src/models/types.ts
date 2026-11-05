@@ -12,6 +12,8 @@ export interface AppUser {
   walletBalance: number;
   monthlyWallets?: Record<string, number>;
   monthlySettlements?: Record<string, number>;
+  monthlyCarryIn?: Record<string, number>;
+  monthlyCarriedOut?: Record<string, number>;
   profileImageUrl?: string;
   bio?: string;
   avatarColor?: string;

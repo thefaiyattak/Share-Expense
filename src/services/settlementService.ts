@@ -22,6 +22,8 @@ export interface PoolRefundItem {
   settledAmount?: number;
   remainingAmount?: number;
   isSettled?: boolean;
+  carryIn?: number;
+  carriedOut?: number;
 }
 
 export interface SettlementSummary {
@@ -166,6 +168,8 @@ export const settlementService = {
         settledAmount: mm.settled,
         remainingAmount: mm.remaining,
         isSettled: mm.isSettled,
+        carryIn: mm.carryIn,
+        carriedOut: mm.carriedOut,
       };
     });
 
@@ -227,11 +231,14 @@ export const settlementService = {
 
       settlement.poolRefunds.forEach(r => {
         if (r.isSettled) {
-          text += `⚪ *${r.userName}:* Settled for this month\n`;
+          const carriedNote = r.carriedOut ? ` (Carried ${formatAmt(r.carriedOut)} to next month)` : '';
+          text += `⚪ *${r.userName}:* Settled for this month${carriedNote}\n`;
         } else if (r.isReceiving) {
-          text += `🟢 *${r.userName}:* Receives ${formatAmt(r.refundOrPayout)} (Deposit: ${formatAmt(r.walletDeposit)} + Spent: ${formatAmt(r.outOfPocketSpent)} - Share: ${formatAmt(r.calculatedShare)})\n`;
+          const carryNote = r.carryIn ? ` + Carry-In: ${formatAmt(r.carryIn)}` : '';
+          text += `🟢 *${r.userName}:* Receives ${formatAmt(r.refundOrPayout)} (Deposit: ${formatAmt(r.walletDeposit)}${carryNote} + Spent: ${formatAmt(r.outOfPocketSpent)} - Share: ${formatAmt(r.calculatedShare)})\n`;
         } else {
-          text += `🔴 *${r.userName}:* Owes/Pays ${formatAmt(r.refundOrPayout)}\n`;
+          const carryNote = r.carryIn ? ` (includes Carry-In: ${formatAmt(r.carryIn)})` : '';
+          text += `🔴 *${r.userName}:* Owes/Pays ${formatAmt(r.refundOrPayout)}${carryNote}\n`;
         }
       });
 
