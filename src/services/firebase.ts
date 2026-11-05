@@ -2,7 +2,7 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, initializeAuth } from 'firebase/auth';
 // @ts-ignore
 import { getReactNativePersistence } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -29,10 +29,13 @@ if (isNewApp) {
   auth = getAuth(app);
 }
 
+// On React Native, Firebase JS SDK lacks IndexedDB and fails to support
+// persistentLocalCache, silently falling back to an in-memory cache and hanging promises.
+// We explicitly configure memoryLocalCache and use our own local SQLite store + outbox.
+// experimentalAutoDetectLongPolling prevents hanging WebChannel connections on mobile networks.
 const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager(),
-  }),
+  localCache: memoryLocalCache(),
+  experimentalAutoDetectLongPolling: true,
 });
 
 const storage = getStorage(app);
