@@ -1263,7 +1263,7 @@ export default function UserDetailScreen() {
                       Edited by {exp.lastEditedBy}{exp.lastEditedAt ? ` at ${formatExactDateTime(exp.lastEditedAt)}` : ''}
                     </Text>
                   )}
-                  {exp.receiptImageUrl ? (
+                  {(exp.receiptImageUrl || exp.localReceiptUri) ? (
                     <TouchableOpacity
                       onPress={(e) => {
                         e.stopPropagation();
@@ -1275,7 +1275,7 @@ export default function UserDetailScreen() {
                             {
                               text: 'View',
                               onPress: () => {
-                                setReceiptPreviewUri(exp.receiptImageUrl!);
+                                setReceiptPreviewUri((exp.localReceiptUri || exp.receiptImageUrl)!);
                                 setReceiptPreviewVisible(true);
                               }
                             }
@@ -1284,8 +1284,14 @@ export default function UserDetailScreen() {
                       }}
                       style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}
                     >
-                      <Ionicons name="camera" size={11} color={colors.primary} />
-                      <Text style={{ fontSize: 10, color: colors.primary, marginLeft: 3, fontWeight: '600' }}>Receipt attached</Text>
+                      <Ionicons
+                        name={exp.localReceiptUri && !exp.receiptImageUrl ? 'cloud-upload-outline' : 'receipt-outline'}
+                        size={14}
+                        color={colors.primary}
+                      />
+                      <Text style={{ fontSize: 11, color: colors.primary, marginLeft: 4, fontWeight: '600' }}>
+                        {exp.localReceiptUri && !exp.receiptImageUrl ? 'Receipt (uploading...)' : 'View Receipt'}
+                      </Text>
                     </TouchableOpacity>
                   ) : null}
                 </View>

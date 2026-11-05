@@ -5,6 +5,7 @@ import {
   increment,
   Timestamp,
   Transaction,
+  updateDoc,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { OutboxOp } from './outbox';
@@ -37,6 +38,9 @@ function cleanPayload<T extends Record<string, any>>(obj: T): Record<string, any
   }
   return result;
 }
+
+import { uploadBlobToFirebaseStorage, deleteLocalAttachment } from './attachments';
+import { useStore } from '../store/useStore';
 
 export type ExecutorFn = (tx: Transaction, op: OutboxOp) => Promise<void>;
 
@@ -317,5 +321,41 @@ export const executors: Record<string, ExecutorFn> = {
     const docRef = doc(db, 'users', userId);
     const cleaned = cleanPayload(updates);
     tx.update(docRef, cleaned);
+  },
+
+  uploadReceipt: async (_tx, op) => {
+    const { expenseId, localUri, storagePath } = op.payload;
+    const downloadUrl = await uploadBlobToFirebaseStorage(localUri, storagePath);
+    const docRef = doc(db, 'expenses', expenseId);
+    await updateDoc(docRef, {
+      receiptImageUrl: downloadUrl,
+      localReceiptUri: null,
+    });
+    await deleteLocalAttachment(localUri);
+  },
+
+  uploadProfileImage: async (_tx, op) => {
+    const { userId, localUri, storagePath } = op.payload;
+    const downloadUrl = await uploadBlobToFirebaseStorage(localUri, storagePath);
+    const cleanId = userId.startsWith('group_') ? userId.replace('group_', '') : userId;
+    if (userId.startsWith('group_')) {
+      const teamRef = doc(db, 'teams', cleanId);
+      await updateDoc(teamRef, { groupImageUrl: downloadUrl });
+    } else {
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        profileImageUrl: downloadUrl,
+        localProfileUri: null,
+      });
+      const currentUser = useStore.getState().currentAppUser;
+      if (currentUser && currentUser.id === userId) {
+        useStore.getState().setCurrentAppUser({
+          ...currentUser,
+          profileImageUrl: downloadUrl,
+          localProfileUri: null,
+        });
+      }
+    }
+    await deleteLocalAttachment(localUri);
   },
 };

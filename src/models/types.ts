@@ -15,6 +15,7 @@ export interface AppUser {
   monthlyCarryIn?: Record<string, number>;
   monthlyCarriedOut?: Record<string, number>;
   profileImageUrl?: string;
+  localProfileUri?: string | null;
   bio?: string;
   avatarColor?: string;
   monthlyTarget?: number;
@@ -45,6 +46,7 @@ export interface Expense {
   date: Date;
   teamId: string;
   receiptImageUrl?: string | null;
+  localReceiptUri?: string | null;
   splitUserIds?: string[];
   isEdited: boolean;
   lastEditedBy?: string;

@@ -19,6 +19,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useStore } from '../../store/useStore';
 import { expenseService } from '../../services/expenseService';
 import { authService } from '../../services/authService';
+import { persistAttachment } from '../../offline/attachments';
+import { enqueueWrite } from '../../offline/syncEngine';
 import { getThemeColors } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -76,7 +78,8 @@ export default function AddExpenseScreen() {
               quality: 0.8,
             });
             if (!result.canceled && result.assets?.[0]?.uri) {
-              updateItem(index, 'receiptUri', result.assets[0].uri);
+              const permanentUri = await persistAttachment(result.assets[0].uri);
+              updateItem(index, 'receiptUri', permanentUri);
             }
           }
         },
@@ -93,7 +96,8 @@ export default function AddExpenseScreen() {
               quality: 0.8,
             });
             if (!result.canceled && result.assets?.[0]?.uri) {
-              updateItem(index, 'receiptUri', result.assets[0].uri);
+              const permanentUri = await persistAttachment(result.assets[0].uri);
+              updateItem(index, 'receiptUri', permanentUri);
             }
           }
         }
@@ -170,17 +174,9 @@ export default function AddExpenseScreen() {
 
     setSaving(true);
     try {
-      const expensesList = await Promise.all(items.map(async (item) => {
-        let receiptUrl = item.receiptUri || null;
-        if (item.receiptUri && (item.receiptUri.startsWith('file://') || item.receiptUri.startsWith('content://'))) {
-          try {
-            receiptUrl = await authService.uploadReceiptImage(item.receiptUri);
-          } catch (e) {
-            console.log('Receipt upload fallback to local URI:', e);
-          }
-        }
-
-        return {
+      for (const item of items) {
+        const teamId = currentAppUser.teamId || `personal_${currentAppUser.id.split('_')[0]}`;
+        const docId = await expenseService.addExpense({
           userId: currentAppUser.id,
           userName: currentAppUser.name,
           itemName: item.name.trim(),
@@ -188,15 +184,28 @@ export default function AddExpenseScreen() {
           price: parseFloat(item.price) || 0,
           category,
           date: expenseDate,
-          teamId: currentAppUser.teamId || `personal_${currentAppUser.id.split('_')[0]}`,
-          receiptImageUrl: receiptUrl,
+          teamId,
+          receiptImageUrl: null,
+          localReceiptUri: item.receiptUri || undefined,
           splitUserIds: selectedSplitUserIds,
           isEdited: false,
           createdAt: new Date(),
-        };
-      }));
+        });
 
-      await expenseService.addExpenses(expensesList);
+        if (item.receiptUri) {
+          await enqueueWrite({
+            uid: currentAppUser.id,
+            teamId,
+            entityId: docId,
+            type: 'uploadReceipt',
+            payload: {
+              expenseId: docId,
+              localUri: item.receiptUri,
+              storagePath: `receipts/${docId}.jpg`,
+            },
+          });
+        }
+      }
       Alert.alert('Success', 'Expenses saved!', [
         { text: 'OK', onPress: () => navigation.goBack() }
       ]);

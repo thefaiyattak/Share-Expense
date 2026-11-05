@@ -1,3 +1,5 @@
+import { persistAttachment } from '../../offline/attachments';
+import { enqueueWrite } from '../../offline/syncEngine';
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
@@ -406,21 +408,26 @@ export default function SettingsScreen() {
     });
     if (!result.canceled && result.assets?.[0]?.uri) {
       const uri = result.assets[0].uri;
-      setProfileImageUri(uri);
+      const permanentUri = await persistAttachment(uri);
+      setProfileImageUri(permanentUri);
       if (!currentAppUser) return;
-      setLoading(true);
-      try {
-        const url = await authService.uploadProfileImage(currentAppUser.id, uri);
-        setCurrentAppUser({
-          ...currentAppUser,
-          profileImageUrl: url
-        });
-        Alert.alert('Success', 'Profile image updated!');
-      } catch (e: any) {
-        Alert.alert('Error', e.message || 'Failed to upload profile image');
-      } finally {
-        setLoading(false);
-      }
+      setCurrentAppUser({
+        ...currentAppUser,
+        profileImageUrl: permanentUri,
+        localProfileUri: permanentUri,
+      });
+      await enqueueWrite({
+        uid: currentAppUser.id,
+        teamId: currentAppUser.teamId || '',
+        entityId: currentAppUser.id,
+        type: 'uploadProfileImage',
+        payload: {
+          userId: currentAppUser.id,
+          localUri: permanentUri,
+          storagePath: `profiles/${currentAppUser.id}.jpg`,
+        },
+      });
+      Alert.alert('Success', 'Profile image updated!');
     }
   };
 
@@ -557,30 +564,23 @@ export default function SettingsScreen() {
     });
     if (!result.canceled && result.assets?.[0]?.uri) {
       const uri = result.assets[0].uri;
-      setLoading(true);
-      try {
-        const url = await authService.uploadProfileImage(`group_${selectedGroup.teamId}`, uri);
-        await updateDoc(doc(db, 'teams', selectedGroup.teamId), {
-          groupImageUrl: url
-        });
-
-        setSelectedGroup({
-          ...selectedGroup,
-          groupImageUrl: url
-        });
-
-        // Reload user teams list
-        const email = currentAppUser?.email;
-        if (email) {
-          const teams = await authService.getUserTeams(email);
-          setUserTeams(teams);
-        }
-        Alert.alert('Success', 'Group image updated successfully!');
-      } catch (e: any) {
-        Alert.alert('Error', e.message || 'Failed to update group image');
-      } finally {
-        setLoading(false);
-      }
+      const permanentUri = await persistAttachment(uri);
+      setSelectedGroup({
+        ...selectedGroup,
+        groupImageUrl: permanentUri,
+      });
+      await enqueueWrite({
+        uid: currentAppUser?.id || 'admin',
+        teamId: selectedGroup.teamId,
+        entityId: `group_${selectedGroup.teamId}`,
+        type: 'uploadProfileImage',
+        payload: {
+          userId: `group_${selectedGroup.teamId}`,
+          localUri: permanentUri,
+          storagePath: `groups/${selectedGroup.teamId}.jpg`,
+        },
+      });
+      Alert.alert('Success', 'Group image updated successfully!');
     }
   };
 

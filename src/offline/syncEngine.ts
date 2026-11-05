@@ -75,34 +75,42 @@ export class SyncEngine {
             throw new Error(`Unknown executor type: ${op.type}`);
           }
 
-          const runner: TransactionRunner = this.customRunner || ((fn) => runTransaction(db, fn));
+          if (op.type === 'uploadReceipt' || op.type === 'uploadProfileImage') {
+            await withTimeout(
+              executor({} as any, op),
+              this.syncTimeoutMs * 2, // 30s timeout for media uploads
+              `Attachment upload ${op.opId} timed out`
+            );
+          } else {
+            const runner: TransactionRunner = this.customRunner || ((fn) => runTransaction(db, fn));
 
-          // Run transaction with 15s timeout
-          await withTimeout(
-            runner(async (tx) => {
-              // 1. Idempotency marker check
-              const markerRef = doc(db, 'syncOps', op.opId);
-              const markerSnap = await tx.get(markerRef);
-              if (markerSnap.exists()) {
-                // Op was already committed on server previously
-                return;
-              }
+            // Run transaction with 15s timeout
+            await withTimeout(
+              runner(async (tx) => {
+                // 1. Idempotency marker check
+                const markerRef = doc(db, 'syncOps', op.opId);
+                const markerSnap = await tx.get(markerRef);
+                if (markerSnap.exists()) {
+                  // Op was already committed on server previously
+                  return;
+                }
 
-              // 2. Execute business writes
-              await executor(tx, op);
+                // 2. Execute business writes
+                await executor(tx, op);
 
-              // 3. Write marker doc
-              tx.set(markerRef, {
-                opId: op.opId,
-                uid: op.uid,
-                teamId: op.teamId,
-                type: op.type,
-                appliedAt: serverTimestamp(),
-              });
-            }),
-            this.syncTimeoutMs,
-            `Sync operation ${op.opId} (${op.type}) timed out after 15s`
-          );
+                // 3. Write marker doc
+                tx.set(markerRef, {
+                  opId: op.opId,
+                  uid: op.uid,
+                  teamId: op.teamId,
+                  type: op.type,
+                  appliedAt: serverTimestamp(),
+                });
+              }),
+              this.syncTimeoutMs,
+              `Sync operation ${op.opId} (${op.type}) timed out after 15s`
+            );
+          }
 
           // Success: remove op from outbox
           await outbox.markDone(op.opId);
