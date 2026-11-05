@@ -3,6 +3,7 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform, Alert } from 'react-native';
 import { AppUser, Expense } from '../models/types';
+import { getMemberMonthDeposit } from '../utils/monthBalance';
 
 export const pdfService = {
   generatePdf: async (params: {
@@ -32,15 +33,7 @@ export const pdfService = {
     const formatAmt = (num: number) => `${currency} ${formatter.format(num)}`;
 
     const currentKey = params.monthKey || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-    const getUserMonthWallet = (u: AppUser) => {
-      if (u?.monthlyWallets && u.monthlyWallets[currentKey] !== undefined) {
-        return u.monthlyWallets[currentKey];
-      }
-      if (currentKey === '2026-08' && (!u?.monthlyWallets || Object.keys(u.monthlyWallets).length === 0)) {
-        return u.walletBalance || 0;
-      }
-      return 0;
-    };
+    const getUserMonthWallet = (u: AppUser) => getMemberMonthDeposit(u, currentKey);
 
     // Build Members Table HTML
     let membersRows = '';

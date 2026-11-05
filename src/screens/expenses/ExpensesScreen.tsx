@@ -26,6 +26,7 @@ import { pdfService } from '../../services/pdfService';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { G, Circle } from 'react-native-svg';
 import { calculateIntegerPercentages } from '../../utils/math';
+import { computeMemberMonth } from '../../utils/monthBalance';
 import ChangeHistoryModal from '../../components/ChangeHistoryModal';
 import MonthPickerModal from '../../components/MonthPickerModal';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
@@ -618,24 +619,23 @@ export default function ExpensesScreen() {
         {members.map((m, idx) => {
           const spent = memberSpentMap[m.id] || 0;
           const share = shares[m.id] || 0;
-          const wallet = getMemberCurrentMonthWallet(m);
-          
-          const totalContribution = wallet + spent;
-          const netPosition = totalContribution - share;
-          
-          let displayBalance = 0;
-          let isPositive = false;
+          const mm = computeMemberMonth({
+            member: m,
+            monthKey: currentMonthKey,
+            spent,
+            share,
+          });
+          const wallet = mm.deposit;
+          const isSettled = mm.isSettled;
+          const isPositive = mm.isReceiving;
+          const displayBalance = Math.abs(mm.remaining);
 
-          if (netPosition >= 0) {
-            isPositive = true;
-            displayBalance = netPosition;
-          } else {
-            isPositive = false;
-            displayBalance = Math.abs(netPosition);
-          }
-
-          const badgeBgColor = isPositive ? colors.financial.walletDepositLight : colors.financial.deficitLight;
-          const badgeTextColor = isPositive ? colors.financial.walletDeposit : colors.financial.deficit;
+          const badgeBgColor = isSettled
+            ? (darkMode ? '#1E293B' : '#F1F5F9')
+            : (isPositive ? colors.financial.walletDepositLight : colors.financial.deficitLight);
+          const badgeTextColor = isSettled
+            ? colors.textSecondary
+            : (isPositive ? colors.financial.walletDeposit : colors.financial.deficit);
           const initials = m.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
           const cardColors = ['#E8F5E9', '#FFF3E0', '#E3F2FD', '#FCE4EC', '#F3E5F5'];

@@ -11,6 +11,7 @@ export interface AppUser {
   teamId: string;
   walletBalance: number;
   monthlyWallets?: Record<string, number>;
+  monthlySettlements?: Record<string, number>;
   profileImageUrl?: string;
   bio?: string;
   avatarColor?: string;

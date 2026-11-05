@@ -182,9 +182,10 @@ export default function SettlementModal({
       netBalances[m.id] = 0;
     });
 
-    // 1. Add pure expense balance (outOfPocketSpent - calculatedShare)
+    // 1. Add pure expense balance (outOfPocketSpent - calculatedShare - settledAmount)
     settlement.poolRefunds.forEach(item => {
-      netBalances[item.userId] = (netBalances[item.userId] || 0) + (item.outOfPocketSpent - item.calculatedShare);
+      const settled = item.settledAmount || 0;
+      netBalances[item.userId] = (netBalances[item.userId] || 0) + (item.outOfPocketSpent - item.calculatedShare - settled);
     });
 
     // 2. Add personal loans balance
@@ -446,21 +447,21 @@ export default function SettlementModal({
                           <View style={{ marginLeft: 12, flex: 1 }}>
                             <Text style={styles.memberName} numberOfLines={1}>{item.userName}</Text>
                             <Text style={styles.memberNetStatusSub}>
-                              {isPositive ? 'Eligible for refund' : 'Payment required to pool'}
+                              {item.isSettled ? 'Settled for this month' : (isPositive ? 'Eligible for refund' : 'Payment required to pool')}
                             </Text>
                           </View>
                         </View>
 
                         {/* Large, clear Status Badge */}
-                        <View style={[styles.spaciousStatusBadge, { backgroundColor: statusBg }]}>
+                        <View style={[styles.spaciousStatusBadge, { backgroundColor: item.isSettled ? colors.financial.walletDepositLight : statusBg }]}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <Ionicons name={isPositive ? "arrow-down-circle" : "arrow-up-circle"} size={13} color={statusColor} />
-                            <Text style={[styles.spaciousStatusAction, { color: statusColor }]}>
-                              {isPositive ? 'RECEIVES' : 'OWES'}
+                            <Ionicons name={item.isSettled ? "checkmark-circle" : (isPositive ? "arrow-down-circle" : "arrow-up-circle")} size={13} color={item.isSettled ? colors.financial.walletDeposit : statusColor} />
+                            <Text style={[styles.spaciousStatusAction, { color: item.isSettled ? colors.financial.walletDeposit : statusColor }]}>
+                              {item.isSettled ? 'SETTLED' : (isPositive ? 'RECEIVES' : 'OWES')}
                             </Text>
                           </View>
-                          <Text style={[styles.spaciousStatusAmt, { color: statusColor }]}>
-                            {isPositive ? '+' : '−'} {formatAmt(item.refundOrPayout)}
+                          <Text style={[styles.spaciousStatusAmt, { color: item.isSettled ? colors.financial.walletDeposit : statusColor }]}>
+                            {item.isSettled ? formatAmt(0) : `${isPositive ? '+' : '−'} ${formatAmt(item.refundOrPayout)}`}
                           </Text>
                         </View>
                       </View>
@@ -489,7 +490,7 @@ export default function SettlementModal({
                       <View style={styles.smartFormulaBar}>
                         <Ionicons name="calculator-outline" size={13} color={colors.textTertiary} style={{ marginRight: 6 }} />
                         <Text style={styles.smartFormulaText}>
-                          ({formatAmt(item.walletDeposit + item.outOfPocketSpent)} total paid) − {formatAmt(item.calculatedShare)} = <Text style={{ fontWeight: '800', color: statusColor }}>{isPositive ? '+' : '−'}{formatAmt(item.refundOrPayout)}</Text>
+                          Pending = ({formatAmt(item.walletDeposit + item.outOfPocketSpent)} paid) − {formatAmt(item.calculatedShare)} share{item.settledAmount ? ` − ${formatAmt(item.settledAmount)} settled` : ''} = <Text style={{ fontWeight: '800', color: item.isSettled ? colors.financial.walletDeposit : statusColor }}>{item.isSettled ? 'Settled' : `${isPositive ? '+' : '−'}${formatAmt(item.refundOrPayout)}`}</Text>
                         </Text>
                       </View>
                     </View>

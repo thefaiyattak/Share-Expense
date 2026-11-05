@@ -88,6 +88,15 @@ export default function ChangeHistoryModal({ visible, onClose, entityId }: Chang
     if (prev.quantity && curr.quantity && prev.quantity !== curr.quantity) {
       changes.push(`Qty: ${prev.quantity} ➔ ${curr.quantity}`);
     }
+    if (item.entityType === 'settlement_payment') {
+      const delta = curr.delta || 0;
+      const dirText = delta > 0 ? '+ Paid to member' : '- Paid by member';
+      changes.push(`Month: ${curr.monthKey || 'Current'}`);
+      changes.push(`Payment: ${dirText} (${currency} ${Math.abs(delta).toLocaleString()})`);
+      if (curr.remaining !== undefined) {
+        changes.push(`Remaining Pending: ${currency} ${Math.abs(curr.remaining).toLocaleString()}${curr.remaining === 0 ? ' (Settled)' : ''}`);
+      }
+    }
     if (prev.walletBalance !== undefined && curr.walletBalance !== undefined && prev.walletBalance !== curr.walletBalance) {
       if (item.entityType === 'wallet_adjustment') {
         const typeLabel = curr.adjustmentType === 'debit' ? 'Debit (-)' : 'Credit (+)';

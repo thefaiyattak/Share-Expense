@@ -36,6 +36,7 @@ import AppTutorialModal from '../../components/AppTutorialModal';
 import LoanModal from '../../components/LoanModal';
 import { loanService } from '../../services/loanService';
 import { PersonalLoan, Expense } from '../../models/types';
+import { getMemberMonthDeposit } from '../../utils/monthBalance';
 import * as Clipboard from 'expo-clipboard';
 
 const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
@@ -896,9 +897,7 @@ export default function DashboardTab() {
     try {
       const viewingMonthKey = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}`;
       const existingMonthlyWallets = currentAppUser.monthlyWallets || {};
-      const currentMonthWallet = existingMonthlyWallets[viewingMonthKey] !== undefined
-        ? existingMonthlyWallets[viewingMonthKey]
-        : (viewingMonthKey === '2026-08' ? (currentAppUser.walletBalance || 0) : 0);
+      const currentMonthWallet = getMemberMonthDeposit(currentAppUser, viewingMonthKey);
 
       const newBal = walletOperation === 'add' 
         ? currentMonthWallet + addedVal 
@@ -1006,15 +1005,7 @@ export default function DashboardTab() {
   }, [selectedDate]);
 
   const { myWallet, totalWallet } = useMemo(() => {
-    const getMemberMonthWallet = (m: any) => {
-      if (m?.monthlyWallets && m.monthlyWallets[viewingMonthKey] !== undefined) {
-        return m.monthlyWallets[viewingMonthKey];
-      }
-      if (viewingMonthKey === '2026-08' && (!m?.monthlyWallets || Object.keys(m.monthlyWallets).length === 0)) {
-        return m?.walletBalance || 0;
-      }
-      return 0;
-    };
+    const getMemberMonthWallet = (m: any) => getMemberMonthDeposit(m, viewingMonthKey);
 
     const mw = getMemberMonthWallet(currentAppUser);
     const tw = members.reduce((sum: number, m: any) => sum + getMemberMonthWallet(m), 0);

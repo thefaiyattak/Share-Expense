@@ -1,4 +1,5 @@
 import { AppUser, Expense } from '../models/types';
+import { computeMemberMonth, getMemberMonthSettled } from '../utils/monthBalance';
 
 export interface SettlementTransaction {
   fromId: string;
@@ -17,6 +18,9 @@ export interface PoolRefundItem {
   netPosition: number;
   refundOrPayout: number;
   isReceiving: boolean;
+  settledAmount?: number;
+  remainingAmount?: number;
+  isSettled?: boolean;
 }
 
 export interface SettlementSummary {
@@ -47,35 +51,35 @@ export const settlementService = {
       const spent = memberSpentMap[m.id] || 0;
       const share = shares[m.id] || 0;
       
-      let deposit = 0;
-      if (m?.monthlyWallets && m.monthlyWallets[currentKey] !== undefined) {
-        deposit = m.monthlyWallets[currentKey];
-      } else if (currentKey === '2026-08' && (!m?.monthlyWallets || Object.keys(m.monthlyWallets).length === 0)) {
-        deposit = m.walletBalance || 0;
-      }
+      const mm = computeMemberMonth({
+        member: m,
+        monthKey: currentKey,
+        spent,
+        share,
+      });
 
       totalSpent += spent;
-      totalWalletDeposits += deposit;
-
-      // Net Balance = (Wallet Deposit + Out of Pocket) - Share
-      const netPosition = (deposit + spent) - share;
+      totalWalletDeposits += mm.deposit;
 
       return {
         userId: m.id,
         userName: m.name,
-        walletDeposit: deposit,
-        outOfPocketSpent: spent,
-        calculatedShare: share,
-        netPosition: Math.round(netPosition),
-        refundOrPayout: Math.round(Math.abs(netPosition)),
-        isReceiving: netPosition >= 0,
+        walletDeposit: mm.deposit,
+        outOfPocketSpent: mm.spent,
+        calculatedShare: mm.share,
+        netPosition: mm.remaining,
+        refundOrPayout: Math.abs(mm.remaining),
+        isReceiving: mm.remaining >= 0,
+        settledAmount: mm.settled,
+        remainingAmount: mm.remaining,
+        isSettled: mm.isSettled,
       };
     });
 
     const remainingWalletPool = Math.max(0, totalWalletDeposits - totalSpent);
 
     // 2. Calculate direct Peer-to-Peer simplified settlements (Splitwise algorithm on net expense balance)
-    // Pure expense balance without wallet pool: (Spent Out of Pocket - Share)
+    // Pure expense balance without wallet pool: (Spent Out of Pocket - Share - Settled)
     interface BalanceEntry {
       id: string;
       name: string;
@@ -85,10 +89,11 @@ export const settlementService = {
     const netExpenseBalances: BalanceEntry[] = members.map(m => {
       const spent = memberSpentMap[m.id] || 0;
       const share = shares[m.id] || 0;
+      const settled = getMemberMonthSettled(m, currentKey);
       return {
         id: m.id,
         name: m.name,
-        balance: Math.round(spent - share),
+        balance: Math.round(spent - share - settled),
       };
     });
 
@@ -159,7 +164,9 @@ export const settlementService = {
       text += `*Member Payouts / Refunds:*\n`;
 
       settlement.poolRefunds.forEach(r => {
-        if (r.isReceiving) {
+        if (r.isSettled) {
+          text += `⚪ *${r.userName}:* Settled for this month\n`;
+        } else if (r.isReceiving) {
           text += `🟢 *${r.userName}:* Receives ${formatAmt(r.refundOrPayout)} (Deposit: ${formatAmt(r.walletDeposit)} + Spent: ${formatAmt(r.outOfPocketSpent)} - Share: ${formatAmt(r.calculatedShare)})\n`;
         } else {
           text += `🔴 *${r.userName}:* Owes/Pays ${formatAmt(r.refundOrPayout)}\n`;

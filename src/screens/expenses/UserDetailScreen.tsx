@@ -30,13 +30,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Circle } from 'react-native-svg';
 import { db } from '../../services/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, FieldPath, increment } from 'firebase/firestore';
 import { expenseService } from '../../services/expenseService';
 import { authService } from '../../services/authService';
 import { pdfService } from '../../services/pdfService';
 import { notificationService } from '../../services/notificationService';
 import { AppUser, UserRole } from '../../models/types';
 import { calculateIntegerPercentages } from '../../utils/math';
+import { computeMemberMonth, validateSettlement, getMemberMonthDeposit, getMemberMonthSettled } from '../../utils/monthBalance';
 import ChangeHistoryModal from '../../components/ChangeHistoryModal';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
 
@@ -46,7 +47,7 @@ export default function UserDetailScreen() {
   const modalBottomPadding = isKeyboardVisible ? 14 : Math.max(insets.bottom + 6, 18);
   const navigation = useNavigation();
   const route = useRoute<any>();
-  const { currency, expenses, currentAppUser, setCurrentAppUser, setExpenses, setMembers, members, darkMode, activeTeamId } = useStore();
+  const { currency, expenses, currentAppUser, setCurrentAppUser, setExpenses, setMembers, members, darkMode, activeTeamId, showToast } = useStore();
 
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors);
@@ -205,21 +206,34 @@ export default function UserDetailScreen() {
     return 0;
   }, [userMemberObj, selectedMonthKey, wallet]);
 
-  // Net balance / wallet deduction status for selected month
-  let monthDisplayBalance = 0;
-  let isMonthPositive = false;
+  // Month financial summary computed via computeMemberMonth
+  const memberMonth = React.useMemo(() => {
+    if (!userMemberObj) {
+      const deposit = userWallet;
+      const net = Math.round(deposit + monthUserSpent - userMonthShare);
+      return {
+        deposit,
+        spent: monthUserSpent,
+        share: userMonthShare,
+        net,
+        settled: 0,
+        remaining: net,
+        isReceiving: net >= 0,
+        isSettled: false,
+      };
+    }
+    return computeMemberMonth({
+      member: userMemberObj,
+      monthKey: selectedMonthKey,
+      spent: monthUserSpent,
+      share: userMonthShare,
+    });
+  }, [userMemberObj, selectedMonthKey, monthUserSpent, userMonthShare, userWallet]);
 
-  // Net position includes wallet deposit PLUS out-of-pocket spent minus calculated share
+  const monthDisplayBalance = Math.abs(memberMonth.remaining);
+  const isMonthPositive = memberMonth.remaining > 0;
+  const isMonthSettled = memberMonth.isSettled;
   const totalUserContribution = userWallet + monthUserSpent;
-  const netPosition = totalUserContribution - userMonthShare;
-
-  if (netPosition >= 0) {
-    isMonthPositive = true;
-    monthDisplayBalance = netPosition;
-  } else {
-    isMonthPositive = false;
-    monthDisplayBalance = Math.abs(netPosition);
-  }
 
   const left = userWallet > 0 ? userWallet - monthUserSpent : -monthUserSpent;
 
@@ -343,82 +357,114 @@ export default function UserDetailScreen() {
     }
   };
 
-  // Handle Admin Manual Adjustment (+ / -)
-  const handleAdminAdjustBalance = async () => {
+    const openAdjustModal = () => {
+    setAdjustError('');
+    setAdjustReasonInput('');
+    if (memberMonth.remaining > 0) {
+      setAdjustType('credit');
+      setAdjustAmountInput(String(memberMonth.remaining));
+    } else if (memberMonth.remaining < 0) {
+      setAdjustType('debit');
+      setAdjustAmountInput(String(Math.abs(memberMonth.remaining)));
+    } else {
+      setAdjustType('credit');
+      setAdjustAmountInput('');
+    }
+    setAdjustModalVisible(true);
+  };
+
+  // Handle Admin Settlement Payment (+ / -)
+  const handleRecordSettlementPayment = async () => {
     if (currentAppUser?.role !== 'admin') {
-      Alert.alert('Access Denied', 'Only the group admin can adjust member amounts or carry them to next month.');
+      Alert.alert('Access Denied', 'Only the group admin can record settlement payments.');
       return;
     }
     const val = Number(adjustAmountInput);
     if (!adjustAmountInput.trim() || isNaN(val) || val <= 0) {
-      setAdjustError('Please enter a valid positive adjustment amount');
+      setAdjustError('Please enter a valid positive payment amount');
+      return;
+    }
+
+    const delta = adjustType === 'credit' ? Math.round(val) : -Math.round(val);
+
+    const validationErr = validateSettlement({
+      net: memberMonth.net,
+      settled: memberMonth.settled,
+      delta,
+    });
+
+    if (validationErr) {
+      setAdjustError(validationErr);
       return;
     }
 
     setAdjustModalVisible(false);
     setLoading(true);
     try {
-      const oldWallet = userWallet;
-      const newWalletAmount = adjustType === 'credit'
-        ? oldWallet + val
-        : Math.max(0, oldWallet - val);
+      await updateDoc(
+        doc(db, 'users', userId),
+        new FieldPath('monthlySettlements', selectedMonthKey),
+        increment(delta)
+      );
 
-      const existingMonthlyWallets = userMemberObj?.monthlyWallets || {};
-      const updatedMonthlyWallets = {
-        ...existingMonthlyWallets,
-        [selectedMonthKey]: newWalletAmount
+      const updatedSettlements = {
+        ...(userMemberObj?.monthlySettlements || {}),
+        [selectedMonthKey]: (userMemberObj?.monthlySettlements?.[selectedMonthKey] || 0) + delta,
       };
+      setMembers(members.map(m => m.id === userId ? { ...m, monthlySettlements: updatedSettlements } : m));
+      if (currentAppUser?.id === userId) {
+        setCurrentAppUser({
+          ...currentAppUser,
+          monthlySettlements: updatedSettlements,
+        });
+      }
 
-      await updateDoc(doc(db, 'users', userId), {
-        monthlyWallets: updatedMonthlyWallets,
-        ...(isCurrentMonth ? { walletBalance: newWalletAmount } : {})
-      });
+      const newRemaining = memberMonth.remaining - delta;
 
-      // LOG HISTORY AUDIT
-      const auditItemName = `Admin Adjustment for ${userName} (${adjustType === 'credit' ? '+' : '-'}${formatAmount(val)})`;
+      const auditItemName = `Settlement Payment for ${userName} (${delta > 0 ? '+' : '-'}${formatAmount(Math.abs(delta))})`;
       await expenseService.logAuditLog({
         teamId: activeTeamId || currentAppUser?.teamId || '',
         entityId: userId,
-        entityType: 'admin_adjustment',
+        entityType: 'settlement_payment',
         action: 'updated',
         itemName: auditItemName,
         userId: currentAppUser?.id || '',
         userName: currentAppUser?.name || 'Admin',
-        previousData: { walletBalance: oldWallet, monthKey: selectedMonthKey },
+        previousData: {
+          settled: memberMonth.settled,
+          remaining: memberMonth.remaining,
+          monthKey: selectedMonthKey,
+        },
         newData: {
-          walletBalance: newWalletAmount,
-          adjustType,
-          amount: val,
+          delta,
+          settled: memberMonth.settled + delta,
+          remaining: newRemaining,
           reason: adjustReasonInput.trim() || 'No reason provided',
-          monthKey: selectedMonthKey
-        }
+          monthKey: selectedMonthKey,
+        },
       });
 
-      // PUSH REAL-TIME NOTIFICATION
       const targetTeamId = activeTeamId || currentAppUser?.teamId;
       if (targetTeamId) {
-        const notifTitle = 'Balance Adjusted by Admin';
-        const notifDesc = `Admin ${currentAppUser?.name || ''} ${adjustType === 'credit' ? 'credited' : 'debited'} ${formatAmount(val)} to ${userName}'s ${selectedMonthDate.toLocaleDateString('en-US', { month: 'short' })} wallet.`;
-        await notificationService.notify(targetTeamId, notifTitle, notifDesc, 'transfers');
-      }
-
-      if (currentAppUser?.id === userId) {
-        setCurrentAppUser({
-          ...currentAppUser,
-          monthlyWallets: updatedMonthlyWallets,
-          ...(isCurrentMonth ? { walletBalance: newWalletAmount } : {})
-        } as AppUser);
+        const notifTitle = 'Settlement Recorded';
+        const notifDesc = `Admin ${currentAppUser?.name || ''} recorded ${delta > 0 ? 'payment of' : 'collection of'} ${formatAmount(Math.abs(delta))} ${delta > 0 ? 'to' : 'from'} ${userName}. Remaining: ${newRemaining === 0 ? 'Settled' : formatAmount(Math.abs(newRemaining))}.`;
+        notificationService.notify(targetTeamId, notifTitle, notifDesc, 'transfers').catch(err => {
+          console.warn('Failed to send settlement notification:', err);
+        });
       }
 
       setAdjustAmountInput('');
       setAdjustReasonInput('');
-      Alert.alert(
-        'Balance Adjusted',
-        `Successfully ${adjustType === 'credit' ? 'credited' : 'debited'} ${formatAmount(val)} for ${userName}. New ${selectedMonthDate.toLocaleDateString('en-US', { month: 'short' })} wallet deposit: ${formatAmount(newWalletAmount)}.`
+
+      showToast(
+        newRemaining === 0
+          ? `${userName}'s account is now fully settled for this month!`
+          : `Recorded ${formatAmount(Math.abs(delta))}. Remaining pending: ${formatAmount(Math.abs(newRemaining))}`,
+        'success',
+        'Settlement Recorded'
       );
-      navigation.goBack();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to adjust balance');
+      Alert.alert('Error', e.message || 'Failed to record settlement payment');
     } finally {
       setLoading(false);
     }
@@ -747,23 +793,47 @@ export default function UserDetailScreen() {
             </View>
 
             {/* Net Status / Wallet Left Card */}
-            <View style={[styles.fCard2x2, { backgroundColor: isMonthPositive ? colors.financial.walletDepositLight : colors.financial.deficitLight, marginLeft: 8 }]}>
+            <View style={[
+              styles.fCard2x2, 
+              { 
+                backgroundColor: isMonthSettled 
+                  ? (darkMode ? '#1E293B' : '#F1F5F9')
+                  : (isMonthPositive ? colors.financial.walletDepositLight : colors.financial.deficitLight), 
+                marginLeft: 8 
+              }
+            ]}>
               <View style={styles.cardHeaderRow}>
-                <Ionicons name={isMonthPositive ? "arrow-up-circle" : "arrow-down-circle"} size={18} color={isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit} />
+                <Ionicons 
+                  name={isMonthSettled ? "checkmark-circle" : (isMonthPositive ? "arrow-up-circle" : "arrow-down-circle")} 
+                  size={18} 
+                  color={isMonthSettled ? colors.financial.walletDeposit : (isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit)} 
+                />
                 {currentAppUser?.role === 'admin' && (
                   <TouchableOpacity
-                    onPress={() => setAdjustModalVisible(true)}
+                    onPress={openAdjustModal}
                     style={{ marginLeft: 'auto' }}
                   >
-                    <Ionicons name="options-outline" size={14} color={isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit} />
+                    <Ionicons 
+                      name="options-outline" 
+                      size={14} 
+                      color={isMonthSettled ? colors.textSecondary : (isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit)} 
+                    />
                   </TouchableOpacity>
                 )}
               </View>
-              <Text style={[styles.fValue, { color: isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit }]} numberOfLines={1}>
-                {isMonthPositive ? '+' : '-'} {formatAmount(monthDisplayBalance)}
+              <Text style={[
+                styles.fValue, 
+                { color: isMonthSettled ? colors.textPrimary : (isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit) }
+              ]} numberOfLines={1}>
+                {isMonthSettled ? formatAmount(0) : `${isMonthPositive ? '+' : '-'} ${formatAmount(monthDisplayBalance)}`}
               </Text>
-              <Text style={[styles.fLabel, { color: isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit }]}>
-                {isMonthPositive ? 'Net Credit (To Receive)' : 'Net Deficit (To Pay)'}
+              <Text style={[
+                styles.fLabel, 
+                { color: isMonthSettled ? colors.financial.walletDeposit : (isMonthPositive ? colors.financial.walletDeposit : colors.financial.deficit) }
+              ]}>
+                {isMonthSettled 
+                  ? 'Settled for this month' 
+                  : (isMonthPositive ? 'Net Credit (To Receive)' : 'Net Deficit (To Pay)')}
               </Text>
             </View>
           </View>
@@ -772,7 +842,7 @@ export default function UserDetailScreen() {
           <View style={{ marginTop: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.surface, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border }}>
             <Ionicons name="information-circle-outline" size={14} color={colors.textSecondary} />
             <Text style={{ fontSize: 11, color: colors.textSecondary, flex: 1 }}>
-              Net Balance = (Deposit + Out of Pocket) − Your Share
+              Pending = (Deposit + Out of Pocket) − Your Share − Settled
             </Text>
           </View>
 
@@ -1241,10 +1311,38 @@ export default function UserDetailScreen() {
               <Ionicons name="options-outline" size={20} color={colors.primary} style={{ marginRight: 6 }} />
               <Text style={styles.modalTitle}>Adjust Pending Amount</Text>
             </View>
-            <Text style={styles.modalSubtitle}>Credit (+) or Debit (-) pending balance for {userName}.</Text>
+            <Text style={styles.modalSubtitle}>{userName} · {selectedMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</Text>
 
-            {/* Adjustment Type Switcher */}
-            <View style={{ flexDirection: 'row', backgroundColor: colors.inputBg, borderRadius: 10, padding: 3, marginBottom: 16, width: '100%' }}>
+            {/* Pending Now Box */}
+            <View style={{
+              width: '100%',
+              backgroundColor: isMonthSettled ? colors.inputBg : (memberMonth.remaining > 0 ? colors.financial.walletDepositLight : colors.financial.deficitLight),
+              borderRadius: 10,
+              padding: 12,
+              marginBottom: 14,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderWidth: 1,
+              borderColor: isMonthSettled ? colors.border : (memberMonth.remaining > 0 ? colors.financial.walletDeposit + '40' : colors.financial.deficit + '40')
+            }}>
+              <View>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>PENDING NOW</Text>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: isMonthSettled ? colors.textPrimary : (memberMonth.remaining > 0 ? colors.financial.walletDeposit : colors.financial.deficit), marginTop: 2 }}>
+                  {isMonthSettled
+                    ? 'Settled (PKR 0)'
+                    : `${memberMonth.remaining > 0 ? '+' : '-'} ${currency} ${Math.abs(memberMonth.remaining).toLocaleString()} (${memberMonth.remaining > 0 ? 'to receive' : 'to pay'})`}
+                </Text>
+              </View>
+              <Ionicons 
+                name={isMonthSettled ? "checkmark-circle" : (memberMonth.remaining > 0 ? "arrow-up-circle" : "arrow-down-circle")} 
+                size={22} 
+                color={isMonthSettled ? colors.financial.walletDeposit : (memberMonth.remaining > 0 ? colors.financial.walletDeposit : colors.financial.deficit)} 
+              />
+            </View>
+
+            {/* Adjustment Direction Switcher */}
+            <View style={{ flexDirection: 'row', backgroundColor: colors.inputBg, borderRadius: 10, padding: 3, marginBottom: 14, width: '100%' }}>
               <TouchableOpacity
                 style={{
                   flex: 1,
@@ -1253,10 +1351,13 @@ export default function UserDetailScreen() {
                   alignItems: 'center',
                   backgroundColor: adjustType === 'credit' ? colors.financial.walletDeposit : 'transparent'
                 }}
-                onPress={() => setAdjustType('credit')}
+                onPress={() => {
+                  setAdjustType('credit');
+                  if (adjustError) setAdjustError('');
+                }}
               >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: adjustType === 'credit' ? '#FFFFFF' : colors.textSecondary }}>
-                  + Credit (Add)
+                <Text style={{ fontSize: 12.5, fontWeight: '700', color: adjustType === 'credit' ? '#FFFFFF' : colors.textSecondary }}>
+                  + Paid to member
                 </Text>
               </TouchableOpacity>
 
@@ -1268,17 +1369,20 @@ export default function UserDetailScreen() {
                   alignItems: 'center',
                   backgroundColor: adjustType === 'debit' ? colors.financial.deficit : 'transparent'
                 }}
-                onPress={() => setAdjustType('debit')}
+                onPress={() => {
+                  setAdjustType('debit');
+                  if (adjustError) setAdjustError('');
+                }}
               >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: adjustType === 'debit' ? '#FFFFFF' : colors.textSecondary }}>
-                  - Debit (Deduct)
+                <Text style={{ fontSize: 12.5, fontWeight: '700', color: adjustType === 'debit' ? '#FFFFFF' : colors.textSecondary }}>
+                  − Paid by member
                 </Text>
               </TouchableOpacity>
             </View>
 
             <TextInput 
               style={[styles.modalInput, adjustError ? { borderColor: colors.error, borderWidth: 1.5 } : null]}
-              placeholder="Amount (e.g. 500)"
+              placeholder="Amount (e.g. 2485)"
               placeholderTextColor={colors.textSecondary}
               value={adjustAmountInput}
               onChangeText={(txt) => {
@@ -1296,8 +1400,28 @@ export default function UserDetailScreen() {
               onChangeText={setAdjustReasonInput}
             />
 
+            {/* Live Preview Bar */}
+            {(() => {
+              const val = Number(adjustAmountInput);
+              if (adjustAmountInput.trim() && !isNaN(val) && val > 0) {
+                const delta = adjustType === 'credit' ? val : -val;
+                const after = memberMonth.remaining - delta;
+                return (
+                  <View style={{ width: '100%', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, backgroundColor: after === 0 ? colors.financial.walletDepositLight : colors.inputBg, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name={after === 0 ? "checkmark-circle" : "calculator-outline"} size={14} color={after === 0 ? colors.financial.walletDeposit : colors.textSecondary} />
+                    <Text style={{ fontSize: 11.5, fontWeight: '700', color: after === 0 ? colors.financial.walletDeposit : colors.textSecondary }}>
+                      {after === 0 
+                        ? 'After this: fully settled' 
+                        : `After this: ${after > 0 ? '+' : '-'} ${currency} ${Math.abs(after).toLocaleString()} remaining`}
+                    </Text>
+                  </View>
+                );
+              }
+              return null;
+            })()}
+
             {adjustError ? (
-              <Text style={{ color: colors.error, fontSize: 11, fontWeight: '600', marginTop: -8, marginBottom: 12, marginLeft: 4 }}>
+              <Text style={{ color: colors.error, fontSize: 11, fontWeight: '600', marginTop: -4, marginBottom: 12, marginLeft: 4 }}>
                 {adjustError}
               </Text>
             ) : null}
@@ -1312,9 +1436,9 @@ export default function UserDetailScreen() {
 
               <TouchableOpacity 
                 style={[styles.modalSubmitBtnSmall, { backgroundColor: adjustType === 'credit' ? colors.financial.walletDeposit : colors.financial.deficit }]}
-                onPress={handleAdminAdjustBalance}
+                onPress={handleRecordSettlementPayment}
               >
-                <Text style={[styles.modalSubmitBtnTextSmall, { color: '#FFFFFF' }]}>Apply Adjustment</Text>
+                <Text style={[styles.modalSubmitBtnTextSmall, { color: '#FFFFFF' }]}>Record Payment</Text>
               </TouchableOpacity>
             </View>
           </View>
