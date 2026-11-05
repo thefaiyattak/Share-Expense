@@ -106,11 +106,25 @@ android {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('RELEASE_STORE_FILE')) {
-                storeFile file(RELEASE_STORE_FILE)
-                storePassword RELEASE_STORE_PASSWORD
-                keyAlias RELEASE_KEY_ALIAS
-                keyPassword RELEASE_KEY_PASSWORD
+            def storeFileProp = findProperty('RELEASE_STORE_FILE') ?: System.getenv('RELEASE_STORE_FILE')
+            def storePasswordProp = findProperty('RELEASE_STORE_PASSWORD') ?: System.getenv('RELEASE_STORE_PASSWORD')
+            def keyAliasProp = findProperty('RELEASE_KEY_ALIAS') ?: System.getenv('RELEASE_KEY_ALIAS')
+            def keyPasswordProp = findProperty('RELEASE_KEY_PASSWORD') ?: System.getenv('RELEASE_KEY_PASSWORD')
+
+            if (storeFileProp && storePasswordProp && keyAliasProp && keyPasswordProp) {
+                storeFile file(storeFileProp)
+                storePassword storePasswordProp
+                keyAlias keyAliasProp
+                keyPassword keyPasswordProp
+            } else {
+                gradle.taskGraph.whenReady { taskGraph ->
+                    if (taskGraph.hasTask(":app:bundleRelease") || taskGraph.hasTask(":app:assembleRelease")) {
+                        throw new GradleException(
+                            "Release signing configuration missing! Please configure RELEASE_STORE_FILE, RELEASE_KEY_ALIAS, " +
+                            "RELEASE_STORE_PASSWORD, and RELEASE_KEY_PASSWORD in ~/.gradle/gradle.properties or as environment variables."
+                        )
+                    }
+                }
             }
         }
     }

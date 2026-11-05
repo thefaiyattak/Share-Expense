@@ -9,14 +9,36 @@ dist/
 web-build/
 expo-env.d.ts
 
-# Native
-.kotlin/
-*.orig.*
+# Native builds & caches
+ios/Pods/
+android/build/
+android/.gradle/
+*.log
+
+# Keystores and signing certificates
+*.keystore
+!android/app/debug.keystore
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
+*.pem
+
+# Build artifacts
+*.aab
+*.apk
+*.apks
+*.zip
+bundletool.jar
+
+# Local configuration and properties
+local.properties
+.env*
+
+# Native temporary
+.kotlin/
+*.orig.*
 
 # Metro
 .metro-health-check*
@@ -28,20 +50,10 @@ yarn-error.*
 
 # macOS
 .DS_Store
-*.pem
-
-# local env files
-.env*.local
 
 # typescript
 *.tsbuildinfo
 
-# generated native folders
-# temporary local bundle outputs & tools
-bundletool.jar
-*.apks
-/android
-
 # firebase key
 firebase-service-account.json
-
+service-account*.json
