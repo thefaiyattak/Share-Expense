@@ -1,5 +1,6 @@
 import { AppUser, Expense } from '../models/types';
 import { computeMemberMonth, getMemberMonthSettled } from '../utils/monthBalance';
+import { splitByWeights } from '../utils/math';
 
 export interface SettlementTransaction {
   fromId: string;
@@ -32,6 +33,87 @@ export interface SettlementSummary {
   hasDirectTransactions: boolean;
 }
 
+export interface DebtParty {
+  id: string;
+  name: string;
+  balance: number;
+}
+
+/**
+ * Generates an exact peer-to-peer settlement plan clearing debts.
+ * Asserts sum(creditors) === sum(debtors). If they differ by even 1 rupee,
+ * logs an error and balances to the largest creditor/debtor so the plan always clears to 0.
+ */
+export function settleDebts(
+  creditors: DebtParty[],
+  debtors: DebtParty[]
+): SettlementTransaction[] {
+  const cList = creditors
+    .map(c => ({ ...c, balance: Math.round(c.balance) }))
+    .filter(c => c.balance > 0)
+    .sort((a, b) => b.balance - a.balance);
+
+  const dList = debtors
+    .map(d => ({ ...d, balance: Math.round(d.balance) }))
+    .filter(d => d.balance > 0)
+    .sort((a, b) => b.balance - a.balance);
+
+  let sumCreditors = cList.reduce((acc, c) => acc + c.balance, 0);
+  let sumDebtors = dList.reduce((acc, d) => acc + d.balance, 0);
+
+  if (sumCreditors !== sumDebtors) {
+    console.error(
+      `[settlementService] Assertion failed: sum(creditors) [${sumCreditors}] !== sum(debtors) [${sumDebtors}]. Imbalance of ${Math.abs(sumCreditors - sumDebtors)} rupee(s). Balancing before generating transactions.`
+    );
+    if (sumCreditors > sumDebtors) {
+      let diff = sumCreditors - sumDebtors;
+      for (const c of cList) {
+        const dec = Math.min(c.balance, diff);
+        c.balance -= dec;
+        diff -= dec;
+        if (diff === 0) break;
+      }
+    } else {
+      let diff = sumDebtors - sumCreditors;
+      for (const d of dList) {
+        const dec = Math.min(d.balance, diff);
+        d.balance -= dec;
+        diff -= dec;
+        if (diff === 0) break;
+      }
+    }
+  }
+
+  const transactions: SettlementTransaction[] = [];
+  let dIdx = 0;
+  let cIdx = 0;
+
+  while (dIdx < dList.length && cIdx < cList.length) {
+    const debtor = dList[dIdx];
+    const creditor = cList[cIdx];
+
+    const settleAmount = Math.min(debtor.balance, creditor.balance);
+
+    if (settleAmount > 0) {
+      transactions.push({
+        fromId: debtor.id,
+        fromName: debtor.name,
+        toId: creditor.id,
+        toName: creditor.name,
+        amount: settleAmount,
+      });
+
+      debtor.balance -= settleAmount;
+      creditor.balance -= settleAmount;
+    }
+
+    if (debtor.balance === 0) dIdx++;
+    if (creditor.balance === 0) cIdx++;
+  }
+
+  return transactions;
+}
+
 export const settlementService = {
   calculateSettlement: (params: {
     members: AppUser[];
@@ -44,12 +126,24 @@ export const settlementService = {
     let totalSpent = 0;
     let totalWalletDeposits = 0;
 
+    members.forEach(m => {
+      totalSpent += (memberSpentMap[m.id] || 0);
+    });
+
+    // Use largest-remainder method so shares sum to exact totalSpent
+    const rawWeights = members.map(m => shares[m.id] || 0);
+    const exactSharesArray = splitByWeights(totalSpent, rawWeights);
+    const exactShares: Record<string, number> = {};
+    members.forEach((m, idx) => {
+      exactShares[m.id] = exactSharesArray[idx];
+    });
+
     const currentKey = monthKey || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
 
     // 1. Calculate pool refunds & individual positions
     const poolRefunds: PoolRefundItem[] = members.map(m => {
       const spent = memberSpentMap[m.id] || 0;
-      const share = shares[m.id] || 0;
+      const share = exactShares[m.id] ?? (shares[m.id] || 0);
       
       const mm = computeMemberMonth({
         member: m,
@@ -58,7 +152,6 @@ export const settlementService = {
         share,
       });
 
-      totalSpent += spent;
       totalWalletDeposits += mm.deposit;
 
       return {
@@ -78,17 +171,11 @@ export const settlementService = {
 
     const remainingWalletPool = Math.max(0, totalWalletDeposits - totalSpent);
 
-    // 2. Calculate direct Peer-to-Peer simplified settlements (Splitwise algorithm on net expense balance)
-    // Pure expense balance without wallet pool: (Spent Out of Pocket - Share - Settled)
-    interface BalanceEntry {
-      id: string;
-      name: string;
-      balance: number; // positive = paid more than share (needs to receive), negative = paid less (needs to pay)
-    }
-
-    const netExpenseBalances: BalanceEntry[] = members.map(m => {
+    // 2. Calculate direct Peer-to-Peer simplified settlements
+    // Net expense balance without wallet pool: (Spent Out of Pocket - Share - Settled)
+    const netExpenseBalances: DebtParty[] = members.map(m => {
       const spent = memberSpentMap[m.id] || 0;
-      const share = shares[m.id] || 0;
+      const share = exactShares[m.id] ?? (shares[m.id] || 0);
       const settled = getMemberMonthSettled(m, currentKey);
       return {
         id: m.id,
@@ -99,40 +186,13 @@ export const settlementService = {
 
     const debtors = netExpenseBalances
       .filter(b => b.balance < 0)
-      .map(b => ({ ...b, balance: Math.abs(b.balance) }))
-      .sort((a, b) => b.balance - a.balance);
+      .map(b => ({ ...b, balance: Math.abs(b.balance) }));
 
     const creditors = netExpenseBalances
       .filter(b => b.balance > 0)
-      .map(b => ({ ...b }))
-      .sort((a, b) => b.balance - a.balance);
+      .map(b => ({ ...b }));
 
-    const peerToPeerTransactions: SettlementTransaction[] = [];
-    let dIdx = 0;
-    let cIdx = 0;
-
-    while (dIdx < debtors.length && cIdx < creditors.length) {
-      const debtor = debtors[dIdx];
-      const creditor = creditors[cIdx];
-
-      const settleAmount = Math.min(debtor.balance, creditor.balance);
-
-      if (settleAmount > 0) {
-        peerToPeerTransactions.push({
-          fromId: debtor.id,
-          fromName: debtor.name,
-          toId: creditor.id,
-          toName: creditor.name,
-          amount: settleAmount,
-        });
-
-        debtor.balance -= settleAmount;
-        creditor.balance -= settleAmount;
-      }
-
-      if (debtor.balance === 0) dIdx++;
-      if (creditor.balance === 0) cIdx++;
-    }
+    const peerToPeerTransactions = settleDebts(creditors, debtors);
 
     return {
       totalSpent: Math.round(totalSpent),
@@ -143,6 +203,8 @@ export const settlementService = {
       hasDirectTransactions: peerToPeerTransactions.length > 0,
     };
   },
+
+  settleDebts,
 
   formatWhatsAppText: (params: {
     teamName: string;

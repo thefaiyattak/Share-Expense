@@ -16,6 +16,7 @@ import {
 import { db } from './firebase';
 import { Expense, Attendance, EditHistory, MealCategory } from '../models/types';
 import { notificationService } from './notificationService';
+import { splitEvenly } from '../utils/math';
 
 export const expenseService = {
   addExpense: async (e: Omit<Expense, 'id'>): Promise<string> => {
@@ -518,11 +519,11 @@ export const expenseService = {
 
       if (payers.length === 0) {
         // Purchaser pays it all
-        shares[exp.userId] = (shares[exp.userId] || 0) + price;
+        shares[exp.userId] = (shares[exp.userId] || 0) + Math.round(price);
       } else {
-        const per = price / payers.length;
-        payers.forEach(uid => {
-          shares[uid] = (shares[uid] || 0) + per;
+        const splits = splitEvenly(price, payers.length);
+        payers.forEach((uid, idx) => {
+          shares[uid] = (shares[uid] || 0) + splits[idx];
         });
       }
     });
