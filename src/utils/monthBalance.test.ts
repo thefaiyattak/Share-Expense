@@ -31,18 +31,13 @@ describe('monthBalance utility', () => {
     expect(toMonthKey('2026-10-01T00:00:00.000Z')).toBe('2026-10');
   });
 
-  it('respects legacy 2026-08 deposit fallback when no monthlyWallets exist', () => {
-    const legacyMember = createMockMember({ walletBalance: 3500 });
-    expect(getMemberMonthDeposit(legacyMember, '2026-08')).toBe(3500);
-    expect(getMemberMonthDeposit(legacyMember, '2026-09')).toBe(0);
-  });
-
-  it('reads monthlyWallets deposit when present', () => {
+  it('returns 0 when month is not in monthlyWallets and reads monthlyWallets deposit when present', () => {
     const member = createMockMember({
+      walletBalance: 3500,
       monthlyWallets: { '2026-10': 2500 },
     });
     expect(getMemberMonthDeposit(member, '2026-10')).toBe(2500);
-    expect(getMemberMonthDeposit(member, '2026-11')).toBe(0);
+    expect(getMemberMonthDeposit(member, '2026-09')).toBe(0);
   });
 
   describe('Acceptance Criteria from Step 5', () => {

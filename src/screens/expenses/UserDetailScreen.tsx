@@ -193,18 +193,8 @@ export default function UserDetailScreen() {
   const userMemberObj = members.find(m => m.id === userId);
   
   const userWallet = React.useMemo(() => {
-    // 1. If monthlyWallets exists and has this month recorded, use it
-    if (userMemberObj?.monthlyWallets && userMemberObj.monthlyWallets[selectedMonthKey] !== undefined) {
-      return userMemberObj.monthlyWallets[selectedMonthKey];
-    }
-    // 2. Legacy fallback for August 2026 (the active month before monthly separation)
-    // if the user has not yet initialized monthlyWallets
-    if (selectedMonthKey === '2026-08' && (!userMemberObj?.monthlyWallets || Object.keys(userMemberObj.monthlyWallets).length === 0)) {
-      return userMemberObj ? userMemberObj.walletBalance : (wallet || 3575);
-    }
-    // 3. Every other month starts with 0 by default until carried over or deposited
-    return 0;
-  }, [userMemberObj, selectedMonthKey, wallet]);
+    return getMemberMonthDeposit(userMemberObj, selectedMonthKey);
+  }, [userMemberObj, selectedMonthKey]);
 
   // Month financial summary computed via computeMemberMonth
   const memberMonth = React.useMemo(() => {

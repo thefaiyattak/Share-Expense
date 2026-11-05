@@ -45,16 +45,12 @@ export function getPrevMonthKey(monthKey: string): string {
 }
 
 /**
- * Gets a member's wallet deposit for a given month, with legacy 2026-08 fallback.
+ * Gets a member's wallet deposit for a given month.
  */
 export function getMemberMonthDeposit(member: AppUser | undefined | null, monthKey: string): number {
   if (!member) return 0;
   if (member.monthlyWallets && member.monthlyWallets[monthKey] !== undefined) {
     return member.monthlyWallets[monthKey];
-  }
-  // Legacy 2026-08 fallback before monthlyWallets existed (retired in Step 8)
-  if (monthKey === '2026-08' && (!member.monthlyWallets || Object.keys(member.monthlyWallets).length === 0)) {
-    return member.walletBalance || 0;
   }
   return 0;
 }

@@ -26,7 +26,7 @@ import { pdfService } from '../../services/pdfService';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { G, Circle } from 'react-native-svg';
 import { calculateIntegerPercentages } from '../../utils/math';
-import { computeMemberMonth } from '../../utils/monthBalance';
+import { computeMemberMonth, getMemberMonthDeposit } from '../../utils/monthBalance';
 import ChangeHistoryModal from '../../components/ChangeHistoryModal';
 import MonthPickerModal from '../../components/MonthPickerModal';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
@@ -114,13 +114,7 @@ export default function ExpensesScreen() {
   }, [selectedMonthDate]);
 
   const getMemberCurrentMonthWallet = React.useCallback((m: any) => {
-    if (m?.monthlyWallets && m.monthlyWallets[currentMonthKey] !== undefined) {
-      return m.monthlyWallets[currentMonthKey];
-    }
-    if (currentMonthKey === '2026-08' && (!m?.monthlyWallets || Object.keys(m.monthlyWallets).length === 0)) {
-      return m?.walletBalance || 0;
-    }
-    return 0;
+    return getMemberMonthDeposit(m, currentMonthKey);
   }, [currentMonthKey]);
 
   // Dynamic calculations
