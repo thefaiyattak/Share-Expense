@@ -43,6 +43,7 @@ import UserDetailScreen from './src/screens/expenses/UserDetailScreen';
 import MoneyCircleScreen from './src/screens/home/MoneyCircleScreen';
 import SyncOfflineScreen from './src/screens/settings/SyncOfflineScreen';
 import SyncStatusBar from './src/components/SyncStatusBar';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -322,7 +323,8 @@ export default function App() {
   }, [currentAppUser]);
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: darkMode ? '#121212' : '#FFFFFF' }}>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: darkMode ? '#121212' : '#FFFFFF' }}>
       <SafeAreaProvider>
         <StatusBar style={darkMode ? 'light' : 'dark'} />
         <CustomToast />
@@ -508,6 +510,7 @@ export default function App() {
         </Modal>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
 
