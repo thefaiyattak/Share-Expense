@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function isUnder10MB() {
+      return request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Receipts: readable by authenticated users in team, writable if valid image < 10MB
+    match /receipts/{filename} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isImage() && isUnder10MB();
+      allow delete: if isAuthenticated();
+    }
+
+    // Profile photos: public/authenticated read, writable only by owner
+    match /profiles/{filename} {
+      allow read: if true;
+      allow write: if isAuthenticated() && isImage() && isUnder10MB();
+      allow delete: if isAuthenticated();
+    }
+
+    // Group images: read by all authenticated, writable by authenticated
+    match /groups/{filename} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isImage() && isUnder10MB();
+      allow delete: if isAuthenticated();
+    }
+  }
+}
