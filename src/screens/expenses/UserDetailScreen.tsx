@@ -1254,7 +1254,12 @@ export default function UserDetailScreen() {
                 }}
               >
                 <View style={styles.expenseMainCol}>
-                  <Text style={styles.expenseName}>{exp.itemName}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Text style={styles.expenseName}>{exp.itemName}</Text>
+                    {!!(exp as any)._pending && (
+                      <Ionicons name="cloud-offline-outline" size={13} color={colors.textTertiary} />
+                    )}
+                  </View>
                   <Text style={styles.expenseDate}>
                     {formatExactDateTime(exp.date)} · Qty: {exp.quantity} · Paid by <Text style={{ fontWeight: 'bold', color: colors.textPrimary }}>{exp.userName}</Text>
                   </Text>

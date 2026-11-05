@@ -320,6 +320,17 @@ export class LocalDatabase {
     await this.driver.run('DELETE FROM cache WHERE scope LIKE ?', [`%${uid}%`]);
   }
 
+  async clearAllCache(): Promise<void> {
+    await this.init();
+    await this.driver.run('DELETE FROM cache');
+  }
+
+  async getCacheCount(): Promise<number> {
+    await this.init();
+    const rows = await this.driver.getAll('SELECT scope FROM cache');
+    return rows.length;
+  }
+
   // OUTBOX METHODS
   async insertOutbox(row: Omit<OutboxRow, 'seq'>): Promise<number> {
     await this.init();

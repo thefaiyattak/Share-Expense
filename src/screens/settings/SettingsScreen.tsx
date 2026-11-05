@@ -1,5 +1,6 @@
 import { persistAttachment } from '../../offline/attachments';
 import { enqueueWrite } from '../../offline/syncEngine';
+import { useNavigation } from '@react-navigation/native';
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
@@ -26,6 +27,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { useStore } from '../../store/useStore';
+import { useNetworkStore } from '../../offline/network';
+import { outbox } from '../../offline/outbox';
 import { authService } from '../../services/authService';
 import { notificationService } from '../../services/notificationService';
 import { getThemeColors } from '../../utils/theme';
@@ -38,6 +41,7 @@ import { defaultTutorialsList } from '../../components/AppTutorialModal';
 const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
 
 export default function SettingsScreen() {
+  const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const isKeyboardVisible = useKeyboardVisible();
   const modalBottomPadding = isKeyboardVisible ? 14 : Math.max(insets.bottom + 6, 18);
@@ -282,7 +286,35 @@ export default function SettingsScreen() {
     ? currentAppUser.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
     : 'U';
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    let pendingCount = 0;
+    if (currentAppUser?.id) {
+      try {
+        const ops = await outbox.getPendingOps(currentAppUser.id);
+        pendingCount = ops.length;
+      } catch {}
+    }
+
+    if (pendingCount > 0) {
+      Alert.alert(
+        'Unsynced Changes',
+        `You have ${pendingCount} unsynced change${pendingCount === 1 ? '' : 's'}. Signing out will keep them on this device, but other devices will not see them until you sign in here again.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Sign Out Anyway',
+            style: 'destructive',
+            onPress: async () => {
+              await authService.signOut();
+              setCurrentAppUser(null);
+              setUserTeams([]);
+            }
+          }
+        ]
+      );
+      return;
+    }
+
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',
@@ -337,6 +369,10 @@ export default function SettingsScreen() {
   };
 
   const handleCreateGroup = async () => {
+    if (!useNetworkStore.getState().isOnline) {
+      Alert.alert('Offline', 'This action needs an internet connection.');
+      return;
+    }
     if (!newGroupName.trim()) {
       Alert.alert('Error', 'Please enter a group name.');
       return;
@@ -366,6 +402,10 @@ export default function SettingsScreen() {
   };
 
   const handleJoinGroup = async () => {
+    if (!useNetworkStore.getState().isOnline) {
+      Alert.alert('Offline', 'This action needs an internet connection.');
+      return;
+    }
     const cleanCode = authService.extractInviteCode(inviteCodeInput);
     if (!cleanCode) {
       Alert.alert('Error', 'Please enter an invite code.');
@@ -657,6 +697,10 @@ export default function SettingsScreen() {
   };
 
   const handleAddMemberToGroup = async () => {
+    if (!useNetworkStore.getState().isOnline) {
+      Alert.alert('Offline', 'This action needs an internet connection.');
+      return;
+    }
     if (!newMemName.trim() || !newMemEmail.trim()) {
       Alert.alert('Error', 'Please fill in both name and email.');
       return;
@@ -1094,6 +1138,7 @@ export default function SettingsScreen() {
         <Text style={styles.sectionHeaderLabel}>Preferences</Text>
         <View style={styles.sectionContent}>
           {renderItem('cash-outline', `Currency (${displayCurrency})`, () => setCurrencyModalVisible(true))}
+          {renderItem('cloud-offline-outline', 'Sync & Offline Status', () => navigation.navigate('SyncOffline'))}
           {renderItem('moon-outline', 'Dark Mode', () => {
             setDarkMode(!darkMode);
           }, (

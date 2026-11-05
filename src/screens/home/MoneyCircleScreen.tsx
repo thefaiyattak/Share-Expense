@@ -374,6 +374,9 @@ export default function MoneyCircleScreen() {
                     <Text style={styles.txTitle}>
                       {isGiven ? `Gave to ${otherName}` : `Borrowed from ${otherName}`}
                     </Text>
+                    {!!(loan as any)._pending && (
+                      <Ionicons name="cloud-offline-outline" size={13} color={colors.textTertiary} />
+                    )}
                     {isSettled && (
                       <View style={styles.settledTag}>
                         <Text style={styles.settledTagText}>SETTLED</Text>

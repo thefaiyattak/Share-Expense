@@ -41,6 +41,8 @@ import SettingsScreen from './src/screens/settings/SettingsScreen';
 import AddExpenseScreen from './src/screens/data_entry/AddExpenseScreen';
 import UserDetailScreen from './src/screens/expenses/UserDetailScreen';
 import MoneyCircleScreen from './src/screens/home/MoneyCircleScreen';
+import SyncOfflineScreen from './src/screens/settings/SyncOfflineScreen';
+import SyncStatusBar from './src/components/SyncStatusBar';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -326,6 +328,7 @@ export default function App() {
         <CustomToast />
         {!initializing && (
           <NavigationContainer theme={navigationTheme}>
+            {currentAppUser && <SyncStatusBar />}
             <Stack.Navigator 
               screenOptions={{ 
                 headerShown: false,
@@ -353,6 +356,7 @@ export default function App() {
                   <Stack.Screen name="AddExpense" component={AddExpenseScreen} />
                   <Stack.Screen name="UserDetail" component={UserDetailScreen} />
                   <Stack.Screen name="MoneyCircle" component={MoneyCircleScreen} />
+                  <Stack.Screen name="SyncOffline" component={SyncOfflineScreen} />
                 </>
               ) : (
                 <Stack.Screen name="Login" component={LoginScreen} />
