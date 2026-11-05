@@ -34,6 +34,7 @@ import SettlementModal from '../../components/SettlementModal';
 import { settlementService } from '../../services/settlementService';
 
 import * as Clipboard from 'expo-clipboard';
+import { buildReportFileName, resolveGroupName } from '../../utils/reportFileName';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental && !(globalThis as any).nativeFabricUIManager && !(globalThis as any).__turboModuleProxy) {
   try {
@@ -46,7 +47,15 @@ export default function ExpensesScreen() {
   const isKeyboardVisible = useKeyboardVisible();
   const modalBottomPadding = isKeyboardVisible ? 14 : Math.max(insets.bottom + 6, 18);
   const navigation = useNavigation<any>();
-  const { currentAppUser, currency, members, expenses, activeTeamId, darkMode } = useStore();
+  const { currentAppUser, currency, members, expenses, activeTeamId, darkMode, userTeams } = useStore();
+  const reportGroupName = resolveGroupName(userTeams, activeTeamId);
+  const reportUserName = (id?: string) => {
+    if (!id) return undefined;
+    const found = members.find(m => m.id === id);
+    if (found) return found.name;
+    if (currentAppUser?.id === id) return currentAppUser.name;
+    return '';
+  };
   const [modalVisible, setModalVisible] = useState(false);
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberEmail, setNewMemberEmail] = useState('');
@@ -211,17 +220,22 @@ export default function ExpensesScreen() {
 
     const runPdfExport = async (targetUserId?: string, userList?: any[]) => {
       try {
+        const fileName = buildReportFileName({
+          date: selectedMonthDate,
+          groupName: reportGroupName,
+          userName: reportUserName(targetUserId),
+        });
         const uri = await pdfService.generatePdf({
           users: userList || members,
           expenses: visibleExpenses,
           dateRange: selectedMonthLabel,
-          teamName: (currentAppUser as any)?.teamName || 'Share Expense',
+          teamName: reportGroupName,
           currency,
           targetUserId,
           skipShare: true,
-          monthKey: currentMonthKey
+          monthKey: currentMonthKey,
+          fileName,
         });
-        const reportLabel = targetUserId ? `Individual_${targetUserId}` : 'Collective';
         setTimeout(() => {
           Alert.alert(
             'PDF Statement Ready',
@@ -230,7 +244,7 @@ export default function ExpensesScreen() {
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Save to Device',
-                onPress: () => pdfService.saveFileToDevice(uri, `ShareExpense_${reportLabel}_${currentMonthKey}.pdf`, 'application/pdf')
+                onPress: () => pdfService.saveFileToDevice(uri, `${fileName}.pdf`, 'application/pdf')
               },
               {
                 text: 'Share',
@@ -287,15 +301,20 @@ export default function ExpensesScreen() {
     
     const runCsvExport = async (targetUserId?: string) => {
       try {
+        const fileName = buildReportFileName({
+          date: selectedMonthDate,
+          groupName: reportGroupName,
+          userName: reportUserName(targetUserId),
+        });
         const uri = await pdfService.generateCsv({
           expenses: visibleExpenses,
           dateRange: selectedMonthLabel,
-          teamName: (currentAppUser as any)?.teamName || 'Share Expense',
+          teamName: reportGroupName,
           currency,
           targetUserId,
-          skipShare: true
+          skipShare: true,
+          fileName,
         });
-        const reportLabel = targetUserId ? `Individual_${targetUserId}` : 'Collective';
         setTimeout(() => {
           Alert.alert(
             'CSV Report Ready',
@@ -304,7 +323,7 @@ export default function ExpensesScreen() {
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Save to Device',
-                onPress: () => pdfService.saveFileToDevice(uri, `ShareExpense_${reportLabel}_${currentMonthKey}.csv`, 'text/csv')
+                onPress: () => pdfService.saveFileToDevice(uri, `${fileName}.csv`, 'text/csv')
               },
               {
                 text: 'Share',
@@ -834,7 +853,7 @@ export default function ExpensesScreen() {
         <SettlementModal
           visible={settlementModalVisible}
           onClose={() => setSettlementModalVisible(false)}
-          teamName={(currentAppUser as any)?.teamName || (activeTeamId ? `Group (${activeTeamId})` : 'Group')}
+          teamName={reportGroupName}
           currency={currency}
           modalBottomPadding={modalBottomPadding}
           initialMonthDate={selectedMonthDate}

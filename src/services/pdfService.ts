@@ -15,6 +15,7 @@ export const pdfService = {
     targetUserId?: string;
     skipShare?: boolean;
     monthKey?: string;
+    fileName?: string;
   }): Promise<string> => {
     const currency = params.currency || 'PKR';
     
@@ -275,10 +276,14 @@ export const pdfService = {
     `;
 
     const { uri } = await Print.printToFileAsync({ html: htmlContent });
-    if (!params.skipShare && (await Sharing.isAvailableAsync())) {
-      await Sharing.shareAsync(uri);
+    let finalUri = uri;
+    if (params.fileName) {
+      finalUri = await placeNamedFile(finalUri, params.fileName, 'pdf');
     }
-    return uri;
+    if (!params.skipShare && (await Sharing.isAvailableAsync())) {
+      await Sharing.shareAsync(finalUri);
+    }
+    return finalUri;
   },
 
   generateCsv: async (params: {
@@ -288,6 +293,7 @@ export const pdfService = {
     skipShare?: boolean;
     dateRange?: string;
     teamName?: string;
+    fileName?: string;
   }): Promise<string> => {
     const currency = params.currency || 'Rs.';
     const headers = ['Date', 'Item', 'Qty/Desc', 'Price', 'Category', 'By'];
@@ -316,9 +322,24 @@ export const pdfService = {
       ...rows.map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(','))
     ].join('\n');
 
-    const reportLabel = params.targetUserId ? `Individual_${params.targetUserId}` : 'Collective';
-    const filename = `${FileSystem.documentDirectory}ShareExpense_${reportLabel}_${Date.now()}.csv`;
-    await FileSystem.writeAsStringAsync(filename, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+    let filename: string;
+    if (params.fileName) {
+      const preferred = `${FileSystem.cacheDirectory}${params.fileName}.csv`;
+      try {
+        await FileSystem.deleteAsync(preferred, { idempotent: true });
+        await FileSystem.writeAsStringAsync(preferred, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+        filename = preferred;
+      } catch (err) {
+        console.warn('[pdfService] generateCsv failed to write to cacheDirectory, falling back:', err);
+        const reportLabel = params.targetUserId ? `Individual_${params.targetUserId}` : 'Collective';
+        filename = `${FileSystem.documentDirectory}ShareExpense_${reportLabel}_${Date.now()}.csv`;
+        await FileSystem.writeAsStringAsync(filename, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+      }
+    } else {
+      const reportLabel = params.targetUserId ? `Individual_${params.targetUserId}` : 'Collective';
+      filename = `${FileSystem.documentDirectory}ShareExpense_${reportLabel}_${Date.now()}.csv`;
+      await FileSystem.writeAsStringAsync(filename, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+    }
     
     if (!params.skipShare && (await Sharing.isAvailableAsync())) {
       await Sharing.shareAsync(filename, { mimeType: 'text/csv', dialogTitle: 'Share CSV Statement' });
@@ -386,3 +407,23 @@ export const pdfService = {
     }
   }
 };
+
+/**
+ * Moves generated temporary file to a specific named file in cacheDirectory.
+ * Guarantees that failures never block the report by falling back to srcUri.
+ */
+async function placeNamedFile(srcUri: string, baseName: string, ext: string): Promise<string> {
+  try {
+    const targetUri = `${FileSystem.cacheDirectory}${baseName}.${ext}`;
+    await FileSystem.deleteAsync(targetUri, { idempotent: true });
+    await FileSystem.moveAsync({
+      from: srcUri,
+      to: targetUri,
+    });
+    return targetUri;
+  } catch (err) {
+    console.warn('[pdfService] placeNamedFile failed to rename file:', err);
+    return srcUri;
+  }
+}
+

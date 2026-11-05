@@ -41,6 +41,7 @@ import { calculateIntegerPercentages } from '../../utils/math';
 import { computeMemberMonth, validateSettlement, getMemberMonthDeposit, getMemberMonthSettled, getNextMonthKey } from '../../utils/monthBalance';
 import ChangeHistoryModal from '../../components/ChangeHistoryModal';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
+import { buildReportFileName, resolveGroupName } from '../../utils/reportFileName';
 
 export default function UserDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -49,6 +50,8 @@ export default function UserDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute<any>();
   const { currency, expenses, currentAppUser, setCurrentAppUser, setExpenses, setMembers, members, darkMode, activeTeamId, showToast } = useStore();
+  const userTeams = useStore((s) => s.userTeams);
+  const reportGroupName = resolveGroupName(userTeams, activeTeamId);
 
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors);
@@ -1338,14 +1341,22 @@ export default function UserDetailScreen() {
                   onPress: async () => {
                     try {
                       setLoading(true);
+                      const fileName = buildReportFileName({
+                        date: selectedMonthDate,
+                        groupName: reportGroupName,
+                        userName: userObj.name,
+                      });
+                      const dateRange = selectedMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
                       const uri = await pdfService.generatePdf({
                         users: [userObj as any],
-                        expenses: expenses,
-                        dateRange: 'All time',
-                        teamName: (currentAppUser as any)?.teamName || 'Share Expense',
+                        expenses: monthTeamExpenses,
+                        dateRange,
+                        teamName: reportGroupName,
                         currency: currency,
                         targetUserId: userId,
-                        skipShare: true
+                        skipShare: true,
+                        monthKey: selectedMonthKey,
+                        fileName,
                       });
                       setTimeout(() => {
                         Alert.alert(
@@ -1355,7 +1366,7 @@ export default function UserDetailScreen() {
                             { text: 'Cancel', style: 'cancel' },
                             { 
                               text: 'Save to Device', 
-                              onPress: () => pdfService.saveFileToDevice(uri, `Statement_${userObj.name}_${Date.now()}.pdf`, 'application/pdf') 
+                              onPress: () => pdfService.saveFileToDevice(uri, `${fileName}.pdf`, 'application/pdf') 
                             },
                             { 
                               text: 'Share', 
@@ -1376,11 +1387,20 @@ export default function UserDetailScreen() {
                   onPress: async () => {
                     try {
                       setLoading(true);
+                      const fileName = buildReportFileName({
+                        date: selectedMonthDate,
+                        groupName: reportGroupName,
+                        userName: userObj.name,
+                      });
+                      const dateRange = selectedMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
                       const uri = await pdfService.generateCsv({
-                        expenses: expenses,
+                        expenses: monthTeamExpenses,
                         currency: currency,
                         targetUserId: userId,
-                        skipShare: true
+                        skipShare: true,
+                        dateRange,
+                        teamName: reportGroupName,
+                        fileName,
                       });
                       setTimeout(() => {
                         Alert.alert(
@@ -1390,7 +1410,7 @@ export default function UserDetailScreen() {
                             { text: 'Cancel', style: 'cancel' },
                             { 
                               text: 'Save to Device', 
-                              onPress: () => pdfService.saveFileToDevice(uri, `Statement_${userObj.name}_${Date.now()}.csv`, 'text/csv') 
+                              onPress: () => pdfService.saveFileToDevice(uri, `${fileName}.csv`, 'text/csv') 
                             },
                             { 
                               text: 'Share', 
