@@ -35,6 +35,7 @@ bundletool.jar
 # Local configuration and properties
 local.properties
 .env*
+!.env.example
 
 # Native temporary
 .kotlin/
