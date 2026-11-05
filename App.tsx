@@ -24,6 +24,7 @@ import { expenseService } from './src/services/expenseService';
 import { notificationService } from './src/services/notificationService';
 import { useStore } from './src/store/useStore';
 import { getThemeColors } from './src/utils/theme';
+import { AppUser } from './src/models/types';
 
 import CustomToast from './src/components/CustomToast';
 
