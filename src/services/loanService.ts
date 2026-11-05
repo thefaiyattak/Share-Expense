@@ -12,6 +12,8 @@ import { db } from './firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PersonalLoan } from '../models/types';
 import { cacheRepo, getUserScope, DEFAULT_SERVER_TIMEOUT_MS } from '../offline/cacheRepo';
+import { enqueueWrite } from '../offline/syncEngine';
+import { generateDocId } from '../offline/executors';
 import { notificationService } from './notificationService';
 
 const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
@@ -73,126 +75,44 @@ export const loanService = {
    * Add a new personal loan transaction (Give / Lent or Borrow).
    */
   addLoan: async (loanData: Omit<PersonalLoan, 'id' | 'createdAt'>): Promise<PersonalLoan> => {
-    const loanId = 'loan_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const loanId = generateDocId('personal_loans');
     const newLoan: PersonalLoan = {
       ...loanData,
       id: loanId,
       createdAt: new Date().toISOString(),
     };
 
-    try {
-      await setDoc(doc(db, 'personal_loans', loanId), newLoan);
-    } catch (e) {
-      console.warn('Could not save loan to Firestore, saving locally:', e);
-    }
-
-    // Save to local cache
-    try {
-      const cached = await appStorage.getItem(LOCAL_LOANS_KEY);
-      const list: PersonalLoan[] = cached ? JSON.parse(cached) : [];
-      list.push(newLoan);
-      await appStorage.setItem(LOCAL_LOANS_KEY, JSON.stringify(list));
-    } catch (err) {
-      console.error('Error updating cached loans:', err);
-    }
-
-    // Notify involved members with push notification and in-app notification
-    if (newLoan.teamId) {
-      const desc = `${newLoan.lenderName} recorded ${newLoan.amount.toLocaleString()} given to ${newLoan.borrowerName}${newLoan.note ? ` (${newLoan.note})` : ''}`;
-      notificationService.notify(
-        newLoan.teamId,
-        'Money Circle: New Entry',
-        desc,
-        'moneyCircle',
-        [newLoan.lenderId, newLoan.borrowerId]
-      ).catch(err => console.error('Failed to notify loan creation:', err));
-    }
+    await enqueueWrite({
+      uid: loanData.lenderId,
+      teamId: loanData.teamId || '',
+      entityId: loanId,
+      type: 'addLoan',
+      payload: newLoan,
+    });
 
     return newLoan;
   },
 
-  /**
-   * Settle or toggle status of a loan
-   */
   settleLoan: async (loanId: string, status: 'PENDING' | 'SETTLED' = 'SETTLED', loanData?: PersonalLoan): Promise<void> => {
-    try {
-      await updateDoc(doc(db, 'personal_loans', loanId), { status });
-    } catch (e) {
-      console.warn('Could not update loan status in Firestore, updating locally:', e);
-    }
-
-    let targetLoan: PersonalLoan | undefined = loanData;
-    try {
-      const cached = await appStorage.getItem(LOCAL_LOANS_KEY);
-      if (cached) {
-        const list: PersonalLoan[] = JSON.parse(cached);
-        if (!targetLoan) {
-          targetLoan = list.find(l => l.id === loanId);
-        }
-        const updated = list.map(l => l.id === loanId ? { ...l, status } : l);
-        await appStorage.setItem(LOCAL_LOANS_KEY, JSON.stringify(updated));
-      }
-    } catch (err) {
-      console.error('Error updating cached loan status:', err);
-    }
-
-    // Notify involved members
-    if (targetLoan && targetLoan.teamId) {
-      const statusText = status === 'SETTLED' ? 'settled' : 'marked as pending';
-      const desc = `Transaction of ${targetLoan.amount.toLocaleString()} between ${targetLoan.lenderName} and ${targetLoan.borrowerName} was ${statusText}.`;
-      notificationService.notify(
-        targetLoan.teamId,
-        `Money Circle: Transaction ${status === 'SETTLED' ? 'Settled' : 'Pending'}`,
-        desc,
-        'moneyCircle',
-        [targetLoan.lenderId, targetLoan.borrowerId]
-      ).catch(err => console.error('Failed to notify loan status update:', err));
-    }
+    await enqueueWrite({
+      uid: loanData?.lenderId || 'unknown',
+      teamId: loanData?.teamId || '',
+      entityId: loanId,
+      type: 'settleLoan',
+      payload: { loanId, status, loanData },
+    });
   },
 
-  /**
-   * Delete a loan
-   */
   deleteLoan: async (loanId: string, loanData?: PersonalLoan): Promise<void> => {
-    try {
-      await deleteDoc(doc(db, 'personal_loans', loanId));
-    } catch (e) {
-      console.warn('Could not delete loan in Firestore:', e);
-    }
-
-    let targetLoan: PersonalLoan | undefined = loanData;
-    try {
-      const cached = await appStorage.getItem(LOCAL_LOANS_KEY);
-      if (cached) {
-        const list: PersonalLoan[] = JSON.parse(cached);
-        if (!targetLoan) {
-          targetLoan = list.find(l => l.id === loanId);
-        }
-        const updated = list.filter(l => l.id !== loanId);
-        await appStorage.setItem(LOCAL_LOANS_KEY, JSON.stringify(updated));
-      }
-    } catch (err) {
-      console.error('Error deleting cached loan:', err);
-    }
-
-    // Notify involved members
-    if (targetLoan && targetLoan.teamId) {
-      const desc = `Transaction of ${targetLoan.amount.toLocaleString()} between ${targetLoan.lenderName} and ${targetLoan.borrowerName} was deleted.`;
-      notificationService.notify(
-        targetLoan.teamId,
-        'Money Circle: Transaction Deleted',
-        desc,
-        'moneyCircle',
-        [targetLoan.lenderId, targetLoan.borrowerId]
-      ).catch(err => console.error('Failed to notify loan deletion:', err));
-    }
+    await enqueueWrite({
+      uid: loanData?.lenderId || 'unknown',
+      teamId: loanData?.teamId || '',
+      entityId: loanId,
+      type: 'deleteLoan',
+      payload: { loanId, loanData },
+    });
   },
 
-  /**
-   * Calculates net loan balance between current user and target member.
-   * Positive value = target member owes current user (You gave/lent more).
-   * Negative value = current user owes target member (You borrowed more).
-   */
   getNetLoanBalanceBetween: (
     currentUserId: string,
     otherUserId: string,
@@ -216,15 +136,29 @@ export const loanService = {
    * toPay = money current user owes to others
    */
   getUserLoanSummary: (currentUserId: string, loans: PersonalLoan[]) => {
-    let toCollect = 0;
-    let toPay = 0;
+    const memberBalances: Record<string, number> = {};
 
     loans.forEach(l => {
       if (l.status === 'SETTLED') return;
+      const otherId = l.lenderId === currentUserId ? l.borrowerId : l.borrowerId === currentUserId ? l.lenderId : null;
+      if (!otherId) return;
+
+      if (!memberBalances[otherId]) memberBalances[otherId] = 0;
       if (l.lenderId === currentUserId) {
-        toCollect += l.amount;
-      } else if (l.borrowerId === currentUserId) {
-        toPay += l.amount;
+        memberBalances[otherId] += l.amount;
+      } else {
+        memberBalances[otherId] -= l.amount;
+      }
+    });
+
+    let toCollect = 0;
+    let toPay = 0;
+
+    Object.values(memberBalances).forEach(net => {
+      if (net > 0) {
+        toCollect += net;
+      } else if (net < 0) {
+        toPay += Math.abs(net);
       }
     });
 

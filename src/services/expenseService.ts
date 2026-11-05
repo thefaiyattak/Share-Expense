@@ -18,123 +18,48 @@ import { Expense, Attendance, EditHistory, MealCategory } from '../models/types'
 import { notificationService } from './notificationService';
 import { splitEvenly } from '../utils/math';
 import { cacheRepo } from '../offline/cacheRepo';
+import { enqueueWrite } from '../offline/syncEngine';
+import { generateDocId } from '../offline/executors';
 
 export const expenseService = {
   addExpense: async (e: Omit<Expense, 'id'>): Promise<string> => {
-    const cleanObject = (obj: Record<string, any>) => {
-      const result: Record<string, any> = {};
-      Object.keys(obj).forEach(key => {
-        if (obj[key] !== undefined && obj[key] !== null) {
-          result[key] = obj[key];
-        } else if (obj[key] === null) {
-          result[key] = null;
-        }
-      });
-      return result;
+    const docId = generateDocId('expenses');
+    const fullExpense: Expense = {
+      ...e,
+      id: docId,
+      receiptImageUrl: e.receiptImageUrl || undefined,
+      date: e.date,
+      createdAt: e.createdAt || new Date(),
     };
 
-    const batch = writeBatch(db);
-    const docRef = doc(collection(db, 'expenses'));
-
-    const data = cleanObject({
-      ...e,
-      receiptImageUrl: e.receiptImageUrl || null,
-      date: Timestamp.fromDate(e.date),
-      createdAt: Timestamp.fromDate(e.createdAt || new Date()),
-      lastEditedAt: e.lastEditedAt ? Timestamp.fromDate(e.lastEditedAt) : null,
-    });
-    batch.set(docRef, data);
-
-    // Audit log
-    const historyRef = doc(collection(db, 'editHistory'));
-    batch.set(historyRef, {
+    await enqueueWrite({
+      uid: e.userId,
       teamId: e.teamId || '',
-      entityId: docRef.id,
-      entityType: 'expense',
-      action: 'created',
-      itemName: e.itemName,
-      userId: e.userId,
-      userName: e.userName,
-      previousData: {},
-      newData: {
-        itemName: e.itemName,
-        price: e.price,
-        quantity: e.quantity,
-        category: e.category,
-      },
-      timestamp: Timestamp.now()
+      entityId: docId,
+      type: 'addExpense',
+      payload: fullExpense,
     });
 
-    await batch.commit();
-
-    if (e.teamId) {
-      await notificationService.notify(
-        e.teamId,
-        'New Expense Added',
-        `${e.userName} added ${e.itemName} (${(e as any).currency || 'PKR'} ${e.price})`,
-        'newExpense'
-      ).catch(err => console.error('Failed to notify expense addition:', err));
-    }
-
-    return docRef.id;
+    return docId;
   },
 
   addExpenses: async (list: Omit<Expense, 'id'>[]): Promise<void> => {
-    const cleanObject = (obj: Record<string, any>) => {
-      const result: Record<string, any> = {};
-      Object.keys(obj).forEach(key => {
-        if (obj[key] !== undefined) {
-          result[key] = obj[key];
-        }
-      });
-      return result;
-    };
-
-    const batch = writeBatch(db);
-    list.forEach((e) => {
-      const docRef = doc(collection(db, 'expenses'));
-      const data = cleanObject({
+    for (const e of list) {
+      const docId = generateDocId('expenses');
+      const fullExpense: Expense = {
         ...e,
-        receiptImageUrl: e.receiptImageUrl || null,
-        date: Timestamp.fromDate(e.date),
-        createdAt: Timestamp.fromDate(e.createdAt || new Date()),
-        lastEditedAt: e.lastEditedAt ? Timestamp.fromDate(e.lastEditedAt) : null,
-      });
-      batch.set(docRef, data);
-
-      // Audit log for each
-      const historyRef = doc(collection(db, 'editHistory'));
-      batch.set(historyRef, {
+        id: docId,
+        receiptImageUrl: e.receiptImageUrl || undefined,
+        date: e.date,
+        createdAt: e.createdAt || new Date(),
+      };
+      await enqueueWrite({
+        uid: e.userId,
         teamId: e.teamId || '',
-        entityId: docRef.id,
-        entityType: 'expense',
-        action: 'created',
-        itemName: e.itemName,
-        userId: e.userId,
-        userName: e.userName,
-        previousData: {},
-        newData: {
-          itemName: e.itemName,
-          price: e.price,
-          quantity: e.quantity,
-          category: e.category,
-        },
-        timestamp: Timestamp.now()
+        entityId: docId,
+        type: 'addExpense',
+        payload: fullExpense,
       });
-    });
-
-    await batch.commit();
-
-    if (list.length > 0 && list[0].teamId) {
-      const first = list[0];
-      const totalAmount = list.reduce((sum, item) => sum + item.price, 0);
-      const itemsSummary = list.map(i => i.itemName).join(', ');
-      await notificationService.notify(
-        first.teamId,
-        'New Expense Added',
-        `${first.userName} added ${list.length} item(s): ${itemsSummary} (Total: ${(first as any).currency || 'Rs.'} ${totalAmount})`,
-        'newExpense'
-      ).catch(err => console.error('Failed to notify bulk expenses:', err));
     }
   },
 
@@ -145,102 +70,38 @@ export const expenseService = {
     userName: string, 
     prev: Record<string, any>
   ): Promise<void> => {
-    const cleanObject = (obj: Record<string, any>) => {
-      const result: Record<string, any> = {};
-      Object.keys(obj).forEach(key => {
-        if (obj[key] !== undefined) {
-          result[key] = obj[key];
-        }
-      });
-      return result;
-    };
-
-    const updatedData: Record<string, any> = cleanObject({
-      ...newData,
-      isEdited: true,
-      lastEditedBy: userName,
-      lastEditedAt: Timestamp.now(),
-    });
-    if (newData.date) {
-      updatedData.date = Timestamp.fromDate(newData.date);
-    }
-
-    const batch = writeBatch(db);
-    batch.update(doc(db, 'expenses', id), updatedData);
-
     const targetTeamId = prev.teamId || (newData as any).teamId || '';
-    const itemTitle = newData.itemName || prev.itemName || 'Expense';
-
-    const fullNewData = cleanObject({
-      itemName: prev.itemName,
-      price: prev.price,
-      quantity: prev.quantity,
-      category: prev.category,
-      splitUserIds: prev.splitUserIds,
-      ...newData,
-      ...updatedData,
-    });
-
-    const historyRef = doc(collection(db, 'editHistory'));
-    const history: Omit<EditHistory, 'id'> = {
+    await enqueueWrite({
+      uid: userId,
       teamId: targetTeamId,
       entityId: id,
-      entityType: 'expense',
-      action: 'updated',
-      itemName: itemTitle,
-      userId,
-      userName,
-      previousData: cleanObject(prev),
-      newData: fullNewData,
-      timestamp: new Date()
-    };
-    batch.set(historyRef, {
-      ...history,
-      timestamp: Timestamp.fromDate(history.timestamp)
+      type: 'updateExpense',
+      payload: {
+        id,
+        ...newData,
+        userName,
+        isEdited: true,
+        lastEditedBy: userName,
+        previousData: prev,
+      },
     });
-
-    await batch.commit();
-
-    if (targetTeamId) {
-      await notificationService.notify(
-        targetTeamId,
-        'Expense Modified',
-        `${userName} updated "${itemTitle}"`,
-        'editExpense'
-      ).catch(err => console.error('Failed to notify expense update:', err));
-    }
   },
 
   deleteExpense: async (id: string, prevData?: Record<string, any>, userId?: string, userName?: string): Promise<void> => {
-    const batch = writeBatch(db);
-    batch.delete(doc(db, 'expenses', id));
-
-    if (userId && userName && prevData) {
-      const historyRef = doc(collection(db, 'editHistory'));
-      batch.set(historyRef, {
-        teamId: prevData.teamId || '',
-        entityId: id,
-        entityType: 'expense',
-        action: 'deleted',
-        itemName: prevData.itemName || 'Expense',
-        userId,
+    const targetTeamId = prevData?.teamId || '';
+    await enqueueWrite({
+      uid: userId || 'anonymous',
+      teamId: targetTeamId,
+      entityId: id,
+      type: 'deleteExpense',
+      payload: {
+        id,
+        teamId: targetTeamId,
+        itemName: prevData?.itemName,
         userName,
-        previousData: prevData,
-        newData: {},
-        timestamp: Timestamp.now()
-      });
-    }
-
-    await batch.commit();
-
-    if (userId && userName && prevData && prevData.teamId) {
-      await notificationService.notify(
-        prevData.teamId,
-        'Expense Deleted',
-        `${userName} deleted "${prevData.itemName || 'Expense'}"`,
-        'editExpense'
-      ).catch(err => console.error('Failed to notify expense deletion:', err));
-    }
+        previousData: prevData || {},
+      },
+    });
   },
 
   logAuditLog: async (params: {
@@ -436,40 +297,13 @@ export const expenseService = {
   }): Promise<void> => {
     const dateStr = params.date.toISOString().substring(0, 10);
     const docId = `${params.userId}_${dateStr}`;
-
-    const attendanceData = {
-      userId: params.userId,
-      date: Timestamp.fromDate(params.date),
-      isPresent: params.isPresent,
-      attendedBreakfast: params.meals.includes('breakfast'),
-      attendedLunch: params.meals.includes('lunch'),
-      attendedDinner: params.meals.includes('dinner'),
-      teamId: params.teamId
-    };
-
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'attendance', docId), attendanceData, { merge: true });
-
-    if (params.userName) {
-      const historyRef = doc(collection(db, 'editHistory'));
-      batch.set(historyRef, {
-        entityId: docId,
-        entityType: 'attendance',
-        userId: params.userId,
-        userName: params.userName,
-        previousData: {
-          meals: params.prevMeals || [],
-          isPresent: (params.prevMeals || []).length > 0
-        },
-        newData: {
-          meals: params.meals,
-          isPresent: params.isPresent
-        },
-        timestamp: Timestamp.now()
-      });
-    }
-
-    await batch.commit();
+    await enqueueWrite({
+      uid: params.userId,
+      teamId: params.teamId,
+      entityId: docId,
+      type: 'markAttendance',
+      payload: params,
+    });
   },
 
   getTeamAttendance: (teamId: string, date: Date, callback: (attendance: Attendance[]) => void) => {

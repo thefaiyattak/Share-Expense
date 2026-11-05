@@ -96,6 +96,19 @@ export class MemoryDatabaseDriver implements IDatabaseDriver {
     }
 
     if (s.startsWith('UPDATE OUTBOX')) {
+      if (s.includes("SET STATUS = 'PENDING'")) {
+        for (const row of this.outbox) {
+          if (row.status === 'syncing') {
+            if (params.length === 1) {
+              if (row.uid === params[0]) row.status = 'pending';
+            } else {
+              row.status = 'pending';
+            }
+          }
+        }
+        return { changes: 1 };
+      }
+
       if (s.includes('STATUS = ?')) {
         const opId = params[params.length - 1];
         const row = this.outbox.find(r => r.opId === opId);

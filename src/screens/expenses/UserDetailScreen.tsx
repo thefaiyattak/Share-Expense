@@ -1,3 +1,4 @@
+import { enqueueWrite } from '../../offline/syncEngine';
 import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
@@ -313,9 +314,17 @@ export default function UserDetailScreen() {
         [selectedMonthKey]: newWalletAmount
       };
 
-      await updateDoc(doc(db, 'users', userId), {
-        monthlyWallets: updatedMonthlyWallets,
-        ...(isCurrentMonth ? { walletBalance: newWalletAmount } : {})
+      await enqueueWrite({
+        uid: currentAppUser?.id || userId,
+        teamId: activeTeamId || currentAppUser?.teamId || '',
+        entityId: userId,
+        type: 'updateWallet',
+        payload: {
+          userId,
+          monthKey: selectedMonthKey,
+          delta: walletOperation === 'add' ? val : -val,
+          userName: currentAppUser?.name || 'Admin',
+        },
       });
 
       // Log audit history
@@ -393,11 +402,19 @@ export default function UserDetailScreen() {
     setAdjustModalVisible(false);
     setLoading(true);
     try {
-      await updateDoc(
-        doc(db, 'users', userId),
-        new FieldPath('monthlySettlements', selectedMonthKey),
-        increment(delta)
-      );
+      await enqueueWrite({
+        uid: currentAppUser?.id || userId,
+        teamId: activeTeamId || currentAppUser?.teamId || '',
+        entityId: userId,
+        type: 'recordSettlement',
+        payload: {
+          userId,
+          monthKey: selectedMonthKey,
+          delta,
+          reason: adjustReasonInput.trim() || 'No reason provided',
+          userName: currentAppUser?.name || 'Admin',
+        },
+      });
 
       const updatedSettlements = {
         ...(userMemberObj?.monthlySettlements || {}),
@@ -494,9 +511,18 @@ export default function UserDetailScreen() {
           onPress: async () => {
             setLoading(true);
             try {
-              await updateDoc(doc(db, 'users', userId), {
-                [`monthlyCarriedOut.${selectedMonthKey}`]: increment(r),
-                [`monthlyCarryIn.${nextMonthKey}`]: increment(r),
+              await enqueueWrite({
+                uid: currentAppUser?.id || userId,
+                teamId: activeTeamId || currentAppUser?.teamId || '',
+                entityId: userId,
+                type: 'carryForward',
+                payload: {
+                  userId,
+                  fromMonthKey: selectedMonthKey,
+                  toMonthKey: nextMonthKey,
+                  amount: r,
+                  userName: currentAppUser?.name || 'Admin',
+                },
               });
 
               const updatedCarriedOut = {
@@ -590,9 +616,18 @@ export default function UserDetailScreen() {
           onPress: async () => {
             setLoading(true);
             try {
-              await updateDoc(doc(db, 'users', userId), {
-                [`monthlyCarriedOut.${selectedMonthKey}`]: increment(-c),
-                [`monthlyCarryIn.${nextMonthKey}`]: increment(-c),
+              await enqueueWrite({
+                uid: currentAppUser?.id || userId,
+                teamId: activeTeamId || currentAppUser?.teamId || '',
+                entityId: userId,
+                type: 'undoCarry',
+                payload: {
+                  userId,
+                  fromMonthKey: selectedMonthKey,
+                  toMonthKey: nextMonthKey,
+                  amount: c,
+                  userName: currentAppUser?.name || 'Admin',
+                },
               });
 
               const updatedCarriedOut = {

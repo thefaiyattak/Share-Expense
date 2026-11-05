@@ -1,3 +1,4 @@
+import { enqueueWrite } from '../../offline/syncEngine';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   StyleSheet, 
@@ -911,10 +912,17 @@ export default function DashboardTab() {
       const now = new Date();
       const isViewingCurrentCalendarMonth = selectedDate.getFullYear() === now.getFullYear() && selectedDate.getMonth() === now.getMonth();
 
-      await updateDoc(doc(db, 'users', currentAppUser.id), {
-        monthlyWallets: updatedMonthlyWallets,
-        monthlyTarget: targetVal,
-        ...(isViewingCurrentCalendarMonth ? { walletBalance: newBal } : {})
+      await enqueueWrite({
+        uid: currentAppUser.id,
+        teamId: activeTeamIdStore || currentAppUser.teamId || '',
+        entityId: currentAppUser.id,
+        type: 'updateWallet',
+        payload: {
+          userId: currentAppUser.id,
+          monthKey: viewingMonthKey,
+          delta: walletOperation === 'add' ? addedVal : -addedVal,
+          userName: currentAppUser.name,
+        },
       });
 
       // LOG AUDIT HISTORY

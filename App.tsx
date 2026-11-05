@@ -22,6 +22,8 @@ try {
 import { authService } from './src/services/authService';
 import { cacheRepo, getUserScope, getTeamScope } from './src/offline/cacheRepo';
 import { useNetworkStore } from './src/offline/network';
+import { syncEngine } from './src/offline/syncEngine';
+import { auth } from './src/services/firebase';
 import { expenseService } from './src/services/expenseService';
 import { notificationService } from './src/services/notificationService';
 import { useStore } from './src/store/useStore';
@@ -144,7 +146,16 @@ export default function App() {
   // Initialize Network Connectivity Monitoring
   useEffect(() => {
     const unsubNet = useNetworkStore.getState().initNetworkMonitoring();
-    return () => unsubNet();
+    const unsubStore = useNetworkStore.subscribe((state, prevState) => {
+      if (state.isOnline && !prevState.isOnline) {
+        const uid = auth.currentUser?.uid;
+        if (uid) syncEngine.flush(uid).catch(() => {});
+      }
+    });
+    return () => {
+      unsubNet();
+      unsubStore();
+    };
   }, []);
 
   // Auth State Listener: waits for SDK initial session resolution and persistent user state
@@ -158,6 +169,10 @@ export default function App() {
 
           // 1. Migrate any legacy AsyncStorage caches once
           await cacheRepo.migrateLegacyAsyncStorage(user.uid, user.email || undefined);
+          await syncEngine.init(user.uid);
+          if (useNetworkStore.getState().isOnline) {
+            syncEngine.flush(user.uid).catch(() => {});
+          }
 
           // 2. Immediately hydrate user profile and teams from SQLite cache FIRST (offline ready)
           const cachedUser = await cacheRepo.loadSnapshot<AppUser>(userScope, 'app_user') || await authService.getCachedAppUser(user.email || '');

@@ -1,5 +1,11 @@
 import { create } from 'zustand';
 import { AppUser, Expense, Attendance } from '../models/types';
+import { OutboxOp } from '../offline/outbox';
+import {
+  applyExpenseOverlay,
+  applyMemberOverlay,
+  applyAttendanceOverlay,
+} from '../offline/overlay';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -22,6 +28,7 @@ interface AppState {
   serverMembers: AppUser[];
   attendance: Attendance[];
   serverAttendance: Attendance[];
+  outboxOps: OutboxOp[];
   categoryColors: Record<string, string>;
   toast: ToastMessage | null;
 
@@ -36,6 +43,7 @@ interface AppState {
   setServerMembers: (members: AppUser[]) => void;
   setAttendance: (attendance: Attendance[]) => void;
   setServerAttendance: (attendance: Attendance[]) => void;
+  setOutboxOps: (ops: OutboxOp[]) => void;
   setCategoryColor: (category: string, color: string) => void;
   showToast: (message: string, type?: ToastType, title?: string) => void;
   hideToast: () => void;
@@ -53,6 +61,7 @@ export const useStore = create<AppState>((set) => ({
   serverMembers: [],
   attendance: [],
   serverAttendance: [],
+  outboxOps: [],
   categoryColors: {
     breakfast: '#FFA726',
     lunch: '#4CAF50',
@@ -66,12 +75,51 @@ export const useStore = create<AppState>((set) => ({
   setUserTeams: (teams) => set({ userTeams: teams }),
   setCurrency: (currency) => set({ currency }),
   setDarkMode: (darkMode) => set({ darkMode }),
-  setExpenses: (expenses) => set({ expenses, serverExpenses: expenses }),
-  setServerExpenses: (expenses) => set({ serverExpenses: expenses, expenses }),
-  setMembers: (members) => set({ members, serverMembers: members }),
-  setServerMembers: (members) => set({ serverMembers: members, members }),
-  setAttendance: (attendance) => set({ attendance, serverAttendance: attendance }),
-  setServerAttendance: (attendance) => set({ serverAttendance: attendance, attendance }),
+
+  setExpenses: (expenses) =>
+    set((state) => ({
+      serverExpenses: expenses,
+      expenses: applyExpenseOverlay(expenses, state.outboxOps),
+    })),
+
+  setServerExpenses: (expenses) =>
+    set((state) => ({
+      serverExpenses: expenses,
+      expenses: applyExpenseOverlay(expenses, state.outboxOps),
+    })),
+
+  setMembers: (members) =>
+    set((state) => ({
+      serverMembers: members,
+      members: applyMemberOverlay(members, state.outboxOps),
+    })),
+
+  setServerMembers: (members) =>
+    set((state) => ({
+      serverMembers: members,
+      members: applyMemberOverlay(members, state.outboxOps),
+    })),
+
+  setAttendance: (attendance) =>
+    set((state) => ({
+      serverAttendance: attendance,
+      attendance: applyAttendanceOverlay(attendance, state.outboxOps),
+    })),
+
+  setServerAttendance: (attendance) =>
+    set((state) => ({
+      serverAttendance: attendance,
+      attendance: applyAttendanceOverlay(attendance, state.outboxOps),
+    })),
+
+  setOutboxOps: (ops) =>
+    set((state) => ({
+      outboxOps: ops,
+      expenses: applyExpenseOverlay(state.serverExpenses, ops),
+      members: applyMemberOverlay(state.serverMembers, ops),
+      attendance: applyAttendanceOverlay(state.serverAttendance, ops),
+    })),
+
   setCategoryColor: (category, color) => 
     set((state) => ({
       categoryColors: {
@@ -79,6 +127,7 @@ export const useStore = create<AppState>((set) => ({
         [category]: color
       }
     })),
+
   showToast: (message, type = 'info', title) => 
     set({
       toast: {
@@ -88,5 +137,6 @@ export const useStore = create<AppState>((set) => ({
         title,
       }
     }),
+
   hideToast: () => set({ toast: null }),
 }));

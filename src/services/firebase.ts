@@ -22,8 +22,9 @@ const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
 
 let auth: any;
 if (isNewApp) {
+  const persistence = typeof getReactNativePersistence === 'function' ? getReactNativePersistence(appStorage) : undefined;
   auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(appStorage)
+    ...(persistence ? { persistence } : {})
   });
 } else {
   auth = getAuth(app);
