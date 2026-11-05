@@ -60,12 +60,17 @@ export function settleDebts(
     .filter(d => d.balance > 0)
     .sort((a, b) => b.balance - a.balance);
 
+  // If there are no creditors or no debtors, no direct peer-to-peer transfers are possible
+  if (cList.length === 0 || dList.length === 0) {
+    return [];
+  }
+
   let sumCreditors = cList.reduce((acc, c) => acc + c.balance, 0);
   let sumDebtors = dList.reduce((acc, d) => acc + d.balance, 0);
 
   if (sumCreditors !== sumDebtors) {
-    console.error(
-      `[settlementService] Assertion failed: sum(creditors) [${sumCreditors}] !== sum(debtors) [${sumDebtors}]. Imbalance of ${Math.abs(sumCreditors - sumDebtors)} rupee(s). Balancing before generating transactions.`
+    console.warn(
+      `[settlementService] Assertion notice: sum(creditors) [${sumCreditors}] !== sum(debtors) [${sumDebtors}]. Imbalance of ${Math.abs(sumCreditors - sumDebtors)} rupee(s). Balancing before generating transactions.`
     );
     if (sumCreditors > sumDebtors) {
       let diff = sumCreditors - sumDebtors;

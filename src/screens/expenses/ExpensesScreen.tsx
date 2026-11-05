@@ -150,15 +150,6 @@ export default function ExpensesScreen() {
     });
   }, [visibleExpenses, memberIds]);
 
-  const settlementSummary = React.useMemo(() => {
-    return settlementService.calculateSettlement({
-      members,
-      memberSpentMap,
-      shares,
-      monthKey: currentMonthKey,
-    });
-  }, [members, memberSpentMap, shares, currentMonthKey]);
-
   const handleCopyTeamId = async () => {
     if (activeTeamId) {
       await Clipboard.setStringAsync(activeTeamId);

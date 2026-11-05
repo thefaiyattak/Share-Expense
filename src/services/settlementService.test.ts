@@ -19,7 +19,7 @@ describe('settleDebts', () => {
   });
 
   it('asserts and auto-balances 1 rupee discrepancy without throwing or leaking', () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     // Creditors expect 100, debtors only owe 99
     const creditors = [{ id: 'u1', name: 'Alice', balance: 100 }];
@@ -34,6 +34,11 @@ describe('settleDebts', () => {
     ]);
 
     spy.mockRestore();
+  });
+
+  it('returns empty when no creditors or no debtors', () => {
+    expect(settleDebts([], [{ id: 'u1', name: 'Bob', balance: 50 }])).toEqual([]);
+    expect(settleDebts([{ id: 'u1', name: 'Alice', balance: 50 }], [])).toEqual([]);
   });
 
   it('clears to 0 when multiple debtors and creditors match', () => {
