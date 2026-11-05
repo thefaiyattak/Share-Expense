@@ -30,13 +30,8 @@ try {
 export default function LoginScreen() {
   const { setCurrentAppUser, setUserTeams, darkMode } = useStore();
   const [loading, setLoading] = useState(false);
-  const [googleModalVisible, setGoogleModalVisible] = useState(false);
   const [isNativeAvailable, setIsNativeAvailable] = useState(true);
   const [loginTab, setLoginTab] = useState<'google' | 'email'>('google');
-
-  // Custom email/google input
-  const [customEmail, setCustomEmail] = useState('');
-  const [customName, setCustomName] = useState('');
 
   // Email+password login
   const [emailInput, setEmailInput] = useState('');
@@ -73,27 +68,6 @@ export default function LoginScreen() {
     setAlertMessage(msg);
     setAlertIsError(isError);
     setAlertVisible(true);
-  };
-
-  const handleGoogleSignIn = async (email: string, name: string) => {
-    setGoogleModalVisible(false);
-    setLoading(true);
-    try {
-      const result = await authService.signInWithGoogle(email, name);
-      const userToSet = result.user;
-      if (userToSet) {
-        const teams = await authService.getUserTeams(email);
-        setUserTeams(teams);
-        setCurrentAppUser(userToSet);
-        showMsg(result.isNew ? 'Signed up successfully with Google!' : 'Signed in successfully!');
-      } else {
-        showMsg('Unable to retrieve user profile.', true);
-      }
-    } catch (e: any) {
-      showMsg(e.message || 'Google sign in failed', true);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleEmailPasswordSignIn = async () => {
@@ -183,34 +157,37 @@ export default function LoginScreen() {
           await GoogleSignin.signOut();
         } catch (_) { }
         const userInfo = await GoogleSignin.signIn();
-        const email = userInfo.data?.user.email;
-        const name = userInfo.data?.user.name || email?.split('@')[0] || 'User';
+        const idToken = userInfo.data?.idToken || (userInfo as any).idToken;
 
-        if (email) {
-          const result = await authService.signInWithGoogle(email, name);
-          const userToSet = result.user;
-          if (userToSet) {
-            const teams = await authService.getUserTeams(email);
-            setUserTeams(teams);
-            setCurrentAppUser(userToSet);
-            showMsg('Signed in successfully with Google!');
-          } else {
-            showMsg('Unable to login with Google.', true);
-          }
+        if (!idToken) {
+          showMsg('Google Sign-In failed: No secure identity token received from Google.', true, 'Google Sign-In');
+          return;
+        }
+
+        const result = await authService.signInWithGoogle(idToken);
+        const userToSet = result.user;
+        if (userToSet) {
+          const email = userToSet.email;
+          const teams = await authService.getUserTeams(email);
+          setUserTeams(teams);
+          setCurrentAppUser(userToSet);
+          showMsg(result.isNew ? 'Signed up successfully with Google!' : 'Signed in successfully!');
+        } else {
+          showMsg('Unable to retrieve user profile after Google Sign-In.', true);
         }
       } else {
         Alert.alert('Google Sign-In', 'Google Sign-In native module is not available in Expo Go. Please build a native APK/AAB or use Email & Password sign-in.');
       }
     } catch (error: any) {
       console.log('Native Google Sign-In Error:', error);
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+      if (error.code === statusCodes?.SIGN_IN_CANCELLED) {
         // User cancelled account picker dialog, do nothing
-      } else if (error.code === statusCodes.IN_PROGRESS) {
+      } else if (error.code === statusCodes?.IN_PROGRESS) {
         // Operation in progress
-      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+      } else if (error.code === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
         Alert.alert('Error', 'Google Play Services are not available or outdated on this device.');
       } else {
-        Alert.alert('Google Sign-In Error', error.message || 'Unable to connect to Google account picker.');
+        showMsg(error.message || 'Unable to connect to Google account picker.', true, 'Google Sign-In Error');
       }
     } finally {
       setLoading(false);

@@ -9,7 +9,8 @@ import {
   EmailAuthProvider,
   verifyBeforeUpdateEmail,
   GoogleAuthProvider,
-  signInWithCredential
+  signInWithCredential,
+  linkWithCredential
 } from 'firebase/auth';
 
 // Translate Firebase auth error codes to friendly messages
@@ -61,42 +62,36 @@ export const authService = {
 
   getCurrentUser: () => auth.currentUser,
 
-  signInWithGoogle: async (email: string, displayName: string, idToken?: string): Promise<{ user: AppUser | null; isNew: boolean }> => {
-    let cred;
-    let isNew = false;
-
-    if (idToken) {
-      const credential = GoogleAuthProvider.credential(idToken);
-      cred = await signInWithCredential(auth, credential);
-    } else {
-      const mockPassword = `GoogleAuthStub_${email.split('@')[0]}_SuperSecretPass!`;
-      try {
-        cred = await signInWithEmailAndPassword(auth, email, mockPassword);
-      } catch (e: any) {
-        if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential' || e.code === 'auth/invalid-email') {
-          try {
-            cred = await createUserWithEmailAndPassword(auth, email, mockPassword);
-            isNew = true;
-          } catch (createErr: any) {
-            if (createErr.code === 'auth/email-already-in-use') {
-              throw new Error('This Gmail is already registered in Firebase with a different password. Please delete the user from Firebase Auth Console to register it via Gmail login.');
-            }
-            throw createErr;
-          }
-        } else {
-          throw e;
-        }
-      }
+  signInWithGoogle: async (idToken: string): Promise<{ user: AppUser | null; isNew: boolean }> => {
+    if (!idToken) {
+      throw new Error('Google Sign-In failed: No ID token provided.');
     }
 
-    const uid = cred.user.uid;
+    let cred;
+    try {
+      const credential = GoogleAuthProvider.credential(idToken);
+      cred = await signInWithCredential(auth, credential);
+    } catch (e: any) {
+      if (e.code === 'auth/account-exists-with-different-credential') {
+        throw new Error(
+          'An account already exists with this email using a different sign-in method. Please sign in with your email and password (or use Forgot Password to reset it), then link your Google account in Settings.'
+        );
+      }
+      throw new Error(friendlyAuthError(e));
+    }
+
+    const firebaseUser = cred.user;
+    const uid = firebaseUser.uid;
+    const email = firebaseUser.email || '';
+    const displayName = firebaseUser.displayName || email.split('@')[0] || 'User';
+
     const q = query(collection(db, 'users'), where('email', '==', email), limit(1));
     const snap = await getDocs(q);
 
     if (snap.empty) {
       const newUser: AppUser = {
         id: uid,
-        name: displayName || email.split('@')[0],
+        name: displayName,
         email: email,
         phone: '',
         role: 'user',
@@ -114,6 +109,17 @@ export const authService = {
       const appUser = await authService.getAppUser(uid);
       return { user: appUser, isNew: false };
     }
+  },
+
+  linkGoogleAccount: async (idToken: string): Promise<void> => {
+    if (!auth.currentUser) {
+      throw new Error('No user is currently signed in.');
+    }
+    if (!idToken) {
+      throw new Error('No ID token provided.');
+    }
+    const credential = GoogleAuthProvider.credential(idToken);
+    await linkWithCredential(auth.currentUser, credential);
   },
 
   extractInviteCode: (text: string): string => {
