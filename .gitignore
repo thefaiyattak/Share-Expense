@@ -27,6 +27,7 @@ android/.gradle/
 
 # Build artifacts
 *.aab
+*.abb
 *.apk
 *.apks
 *.zip
