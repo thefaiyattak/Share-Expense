@@ -26,6 +26,7 @@ import { syncEngine } from './src/offline/syncEngine';
 import { auth } from './src/services/firebase';
 import { expenseService } from './src/services/expenseService';
 import { notificationService } from './src/services/notificationService';
+import { inAppUpdateService } from './src/services/inAppUpdateService';
 import { useStore } from './src/store/useStore';
 import { getThemeColors } from './src/utils/theme';
 import { AppUser, Expense, Attendance } from './src/models/types';
@@ -158,6 +159,14 @@ export default function App() {
     return () => {
       unsubNet();
       unsubStore();
+    };
+  }, []);
+
+  // Check for Google Play in-app updates (flexible / background)
+  useEffect(() => {
+    inAppUpdateService.checkOnAppLaunch();
+    return () => {
+      inAppUpdateService.cleanup();
     };
   }, []);
 

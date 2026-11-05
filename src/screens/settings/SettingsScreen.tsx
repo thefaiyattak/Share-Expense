@@ -31,6 +31,7 @@ import { useNetworkStore } from '../../offline/network';
 import { outbox } from '../../offline/outbox';
 import { authService } from '../../services/authService';
 import { notificationService } from '../../services/notificationService';
+import { inAppUpdateService } from '../../services/inAppUpdateService';
 import { getThemeColors } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { AppUser, UserRole } from '../../models/types';
@@ -85,6 +86,7 @@ export default function SettingsScreen() {
   const [editAvatarColor, setEditAvatarColor] = useState((currentAppUser as any)?.avatarColor || colors.primary);
   const [profileImageUri, setProfileImageUri] = useState(currentAppUser?.profileImageUrl || '');
   const [aboutModalVisible, setAboutModalVisible] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   // Account Security state
   const [securityModalVisible, setSecurityModalVisible] = useState(false);
@@ -988,6 +990,28 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleCheckForUpdates = async () => {
+    if (checkingUpdate) return;
+    setCheckingUpdate(true);
+    try {
+      const res = await inAppUpdateService.checkManually();
+      if (res.available) {
+        if (!res.started) {
+          Alert.alert(
+            'Update Available',
+            `A new version (${res.storeVersion || 'latest'}) is available on Google Play Store.`
+          );
+        }
+      } else if (res.error) {
+        Alert.alert('Update Check', res.error);
+      } else {
+        Alert.alert('App is Up to Date', 'You are using the latest version of Share Expense (v1.0.0-final).');
+      }
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
   const renderItem = (icon: string, label: string, onPress: () => void, rightElement?: React.ReactNode) => {
     return (
       <TouchableOpacity style={styles.itemRow} onPress={onPress}>
@@ -1178,6 +1202,12 @@ export default function SettingsScreen() {
           {renderItem('information-circle-outline', 'About app', () => {
             setAboutModalVisible(true);
           })}
+          {renderItem(
+            'cloud-download-outline',
+            checkingUpdate ? 'Checking for updates...' : 'Check for updates',
+            handleCheckForUpdates,
+            checkingUpdate ? <ActivityIndicator size="small" color={colors.primary} /> : undefined
+          )}
         </View>
 
         {/* Account Management Action Buttons */}
