@@ -17,8 +17,11 @@ interface AppState {
   currency: string;
   darkMode: boolean;
   expenses: Expense[];
+  serverExpenses: Expense[];
   members: AppUser[];
+  serverMembers: AppUser[];
   attendance: Attendance[];
+  serverAttendance: Attendance[];
   categoryColors: Record<string, string>;
   toast: ToastMessage | null;
 
@@ -28,8 +31,11 @@ interface AppState {
   setCurrency: (currency: string) => void;
   setDarkMode: (darkMode: boolean) => void;
   setExpenses: (expenses: Expense[]) => void;
+  setServerExpenses: (expenses: Expense[]) => void;
   setMembers: (members: AppUser[]) => void;
+  setServerMembers: (members: AppUser[]) => void;
   setAttendance: (attendance: Attendance[]) => void;
+  setServerAttendance: (attendance: Attendance[]) => void;
   setCategoryColor: (category: string, color: string) => void;
   showToast: (message: string, type?: ToastType, title?: string) => void;
   hideToast: () => void;
@@ -42,8 +48,11 @@ export const useStore = create<AppState>((set) => ({
   currency: 'PKR',
   darkMode: false,
   expenses: [],
+  serverExpenses: [],
   members: [],
+  serverMembers: [],
   attendance: [],
+  serverAttendance: [],
   categoryColors: {
     breakfast: '#FFA726',
     lunch: '#4CAF50',
@@ -57,9 +66,12 @@ export const useStore = create<AppState>((set) => ({
   setUserTeams: (teams) => set({ userTeams: teams }),
   setCurrency: (currency) => set({ currency }),
   setDarkMode: (darkMode) => set({ darkMode }),
-  setExpenses: (expenses) => set({ expenses }),
-  setMembers: (members) => set({ members }),
-  setAttendance: (attendance) => set({ attendance }),
+  setExpenses: (expenses) => set({ expenses, serverExpenses: expenses }),
+  setServerExpenses: (expenses) => set({ serverExpenses: expenses, expenses }),
+  setMembers: (members) => set({ members, serverMembers: members }),
+  setServerMembers: (members) => set({ serverMembers: members, members }),
+  setAttendance: (attendance) => set({ attendance, serverAttendance: attendance }),
+  setServerAttendance: (attendance) => set({ serverAttendance: attendance, attendance }),
   setCategoryColor: (category, color) => 
     set((state) => ({
       categoryColors: {

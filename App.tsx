@@ -20,11 +20,13 @@ try {
 } catch (e) {}
 
 import { authService } from './src/services/authService';
+import { cacheRepo, getUserScope, getTeamScope } from './src/offline/cacheRepo';
+import { useNetworkStore } from './src/offline/network';
 import { expenseService } from './src/services/expenseService';
 import { notificationService } from './src/services/notificationService';
 import { useStore } from './src/store/useStore';
 import { getThemeColors } from './src/utils/theme';
-import { AppUser } from './src/models/types';
+import { AppUser, Expense, Attendance } from './src/models/types';
 
 import CustomToast from './src/components/CustomToast';
 
@@ -139,6 +141,12 @@ export default function App() {
     },
   };
 
+  // Initialize Network Connectivity Monitoring
+  useEffect(() => {
+    const unsubNet = useNetworkStore.getState().initNetworkMonitoring();
+    return () => unsubNet();
+  }, []);
+
   // Auth State Listener: waits for SDK initial session resolution and persistent user state
   useEffect(() => {
     let isMounted = true;
@@ -146,42 +154,72 @@ export default function App() {
     const unsub = authService.onAuthStateChanged(async (user) => {
       try {
         if (user) {
-          // 1. Immediately restore cached user profile if present
-          const cachedUser = await authService.getCachedAppUser(user.email || '');
+          const userScope = getUserScope(user.uid);
+
+          // 1. Migrate any legacy AsyncStorage caches once
+          await cacheRepo.migrateLegacyAsyncStorage(user.uid, user.email || undefined);
+
+          // 2. Immediately hydrate user profile and teams from SQLite cache FIRST (offline ready)
+          const cachedUser = await cacheRepo.loadSnapshot<AppUser>(userScope, 'app_user') || await authService.getCachedAppUser(user.email || '');
           if (cachedUser && isMounted) {
             setCurrentAppUser(cachedUser);
           }
 
-          // 2. Fetch fresh profile from server/cache
-          const appUser = await authService.getAppUser(user.uid, user.email || undefined);
-          if (isMounted) {
-            if (appUser) {
-              setCurrentAppUser(appUser);
-            } else if (!cachedUser) {
-              const fallback: AppUser = {
-                id: user.uid,
-                name: user.displayName || user.email?.split('@')[0] || 'User',
-                email: user.email || '',
-                phone: user.phoneNumber || '',
-                role: 'user',
-                teamId: '',
-                walletBalance: 0.0,
-                currency: 'PKR',
-                createdAt: new Date(),
-              };
-              setCurrentAppUser(fallback);
-            }
+          const cachedTeams = await cacheRepo.loadSnapshot<any[]>(userScope, 'user_teams');
+          if (cachedTeams && isMounted) {
+            setUserTeams(cachedTeams);
+          }
 
-            if (appUser?.id || cachedUser?.id) {
-              notificationService.registerForPushNotificationsAsync(appUser?.id || cachedUser!.id).catch(() => {});
-            }
+          // 3. Hydrate team expenses, members, and attendance from SQLite cache BEFORE listeners start
+          const effectiveTeamId = cachedUser?.teamId || '';
+          if (effectiveTeamId && isMounted) {
+            const teamScope = getTeamScope(user.uid, effectiveTeamId);
+            const [cachedExpenses, cachedMembers, cachedAttendance] = await Promise.all([
+              cacheRepo.loadSnapshot<Expense[]>(teamScope, 'expenses'),
+              cacheRepo.loadSnapshot<AppUser[]>(teamScope, 'members'),
+              cacheRepo.loadSnapshot<Attendance[]>(teamScope, 'attendance'),
+            ]);
+            if (cachedExpenses && isMounted) setExpenses(cachedExpenses);
+            if (cachedMembers && isMounted) setMembers(cachedMembers);
+            if (cachedAttendance && isMounted) setAttendance(cachedAttendance);
+          }
 
-            if (user.email) {
-              const teams = await authService.getUserTeams(user.email);
-              if (isMounted && teams) {
-                setUserTeams(teams);
+          // 4. Try fetching fresh profile from server/cache with timeout
+          try {
+            const appUser = await authService.getAppUser(user.uid, user.email || undefined);
+            if (isMounted) {
+              if (appUser) {
+                setCurrentAppUser(appUser);
+                cacheRepo.saveSnapshot(userScope, 'app_user', appUser, 0).catch(() => {});
+              } else if (!cachedUser) {
+                const fallback: AppUser = {
+                  id: user.uid,
+                  name: user.displayName || user.email?.split('@')[0] || 'User',
+                  email: user.email || '',
+                  phone: user.phoneNumber || '',
+                  role: 'user',
+                  teamId: '',
+                  walletBalance: 0.0,
+                  currency: 'PKR',
+                  createdAt: new Date(),
+                };
+                setCurrentAppUser(fallback);
+              }
+
+              if (appUser?.id || cachedUser?.id) {
+                notificationService.registerForPushNotificationsAsync(appUser?.id || cachedUser!.id).catch(() => {});
+              }
+
+              if (user.email) {
+                const teams = await authService.getUserTeams(user.email);
+                if (isMounted && teams) {
+                  setUserTeams(teams);
+                  cacheRepo.saveSnapshot(userScope, 'user_teams', teams, 0).catch(() => {});
+                }
               }
             }
+          } catch (netErr) {
+            console.log('[App] Offline or network error fetching fresh profile, cached data remains active:', netErr);
           }
         } else {
           if (isMounted) {
@@ -193,27 +231,7 @@ export default function App() {
         }
       } catch (e) {
         // Network or temporary failure: preserve session for authenticated user
-        if (user && isMounted) {
-          const cachedUser = await authService.getCachedAppUser(user.email || '');
-          if (cachedUser) {
-            setCurrentAppUser(cachedUser);
-          } else {
-            setCurrentAppUser({
-              id: user.uid,
-              name: user.displayName || user.email?.split('@')[0] || 'User',
-              email: user.email || '',
-              phone: user.phoneNumber || '',
-              role: 'user',
-              teamId: '',
-              walletBalance: 0.0,
-              currency: 'PKR',
-              createdAt: new Date(),
-            });
-          }
-        } else if (isMounted) {
-          setCurrentAppUser(null);
-          setUserTeams([]);
-        }
+        console.warn('[App] Error during auth init, preserving session:', e);
       } finally {
         if (isMounted) {
           setInitializing(false);
@@ -249,17 +267,33 @@ export default function App() {
 
     const teamIdToListen = currentAppUser.teamId || `personal_${currentAppUser.id.split('_')[0]}`;
 
+    const teamScope = getTeamScope(currentAppUser.id, teamIdToListen);
+
     // 1. Listen for Team Expenses
-    const unsubExpenses = expenseService.getTeamExpenses(teamIdToListen, (data) => {
-      setExpenses(data);
-    });
+    const unsubExpenses = expenseService.getTeamExpenses(
+      teamIdToListen, 
+      (data) => {
+        setExpenses(data);
+        cacheRepo.saveSnapshot(teamScope, 'expenses', data);
+      },
+      (error) => {
+        console.warn('[App] Expenses listener error (keeping current cache):', error);
+      }
+    );
 
     // 2. Listen for Team Members
     let unsubMembers = () => {};
     if (currentAppUser.teamId) {
-      unsubMembers = authService.getTeamMembers(currentAppUser.teamId, (data) => {
-        setMembers(data);
-      });
+      unsubMembers = authService.getTeamMembers(
+        currentAppUser.teamId, 
+        (data) => {
+          setMembers(data);
+          cacheRepo.saveSnapshot(teamScope, 'members', data);
+        },
+        (error) => {
+          console.warn('[App] Members listener error (keeping current cache):', error);
+        }
+      );
     } else {
       setMembers([currentAppUser]);
     }

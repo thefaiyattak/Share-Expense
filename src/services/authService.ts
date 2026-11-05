@@ -50,6 +50,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from './firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppUser, Team, UserRole } from '../models/types';
+import { cacheRepo, getUserScope, DEFAULT_SERVER_TIMEOUT_MS } from '../offline/cacheRepo';
 import { notificationService } from './notificationService';
 
 const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
@@ -572,27 +573,39 @@ export const authService = {
     });
   },
 
-  getTeamMembers: (teamId: string, callback: (users: AppUser[]) => void) => {
+  getTeamMembers: (teamId: string, callback: (users: AppUser[]) => void, onError?: (err: any) => void) => {
+    let prevCount = 0;
     const q = query(collection(db, 'users'), where('teamId', '==', teamId));
-    return onSnapshot(q, (snap) => {
-      const now = new Date();
-      const users = snap.docs
-        .map(d => {
-          const data = d.data();
-          let deleteAtDate = null;
-          if (data.deleteAt) {
-            deleteAtDate = data.deleteAt.toDate ? data.deleteAt.toDate() : new Date(data.deleteAt);
-          }
-          return { id: d.id, ...data, deleteAt: deleteAtDate } as unknown as AppUser;
-        })
-        .filter(u => {
-          if (!u.deactivated) return true;
-          // Show deactivated user only if they are pending deletion and it hasn't expired yet
-          if (u.deleted && u.deleteAt && u.deleteAt > now) return true;
-          return false;
-        });
-      callback(users);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        if (cacheRepo.shouldIgnoreSnapshot(snap, prevCount)) {
+          return;
+        }
+        const now = new Date();
+        const users = snap.docs
+          .map(d => {
+            const data = d.data();
+            let deleteAtDate = null;
+            if (data.deleteAt) {
+              deleteAtDate = data.deleteAt.toDate ? data.deleteAt.toDate() : new Date(data.deleteAt);
+            }
+            return { id: d.id, ...data, deleteAt: deleteAtDate } as unknown as AppUser;
+          })
+          .filter(u => {
+            if (!u.deactivated) return true;
+            // Show deactivated user only if they are pending deletion and it hasn't expired yet
+            if (u.deleted && u.deleteAt && u.deleteAt > now) return true;
+            return false;
+          });
+        prevCount = users.length;
+        callback(users);
+      },
+      (err) => {
+        console.warn('[authService] getTeamMembers listener error (preserving cache):', err);
+        if (onError) onError(err);
+      }
+    );
   },
 
   syncProfileAcrossGroups: async (userId: string, data: Partial<AppUser>) => {

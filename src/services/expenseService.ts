@@ -17,6 +17,7 @@ import { db } from './firebase';
 import { Expense, Attendance, EditHistory, MealCategory } from '../models/types';
 import { notificationService } from './notificationService';
 import { splitEvenly } from '../utils/math';
+import { cacheRepo } from '../offline/cacheRepo';
 
 export const expenseService = {
   addExpense: async (e: Omit<Expense, 'id'>): Promise<string> => {
@@ -283,103 +284,145 @@ export const expenseService = {
     await batch.commit();
   },
 
-  getTeamExpenses: (teamId: string, callback: (expenses: Expense[]) => void) => {
+  getTeamExpenses: (teamId: string, callback: (expenses: Expense[]) => void, onError?: (err: any) => void) => {
     const toDateSafe = (val: any) => {
       if (!val) return new Date();
       if (typeof val.toDate === 'function') return val.toDate();
       return new Date(val);
     };
 
+    let prevCount = 0;
     const q = query(
       collection(db, 'expenses'), 
       where('teamId', '==', teamId), 
       orderBy('date', 'desc')
     );
-    return onSnapshot(q, (snap) => {
-      const expenses = snap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          ...data,
-          date: toDateSafe(data.date),
-          createdAt: toDateSafe(data.createdAt),
-          lastEditedAt: data.lastEditedAt ? toDateSafe(data.lastEditedAt) : undefined
-        } as Expense;
-      });
-      callback(expenses);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        if (cacheRepo.shouldIgnoreSnapshot(snap, prevCount)) {
+          return;
+        }
+        const expenses = snap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ...data,
+            date: toDateSafe(data.date),
+            createdAt: toDateSafe(data.createdAt),
+            lastEditedAt: data.lastEditedAt ? toDateSafe(data.lastEditedAt) : undefined
+          } as Expense;
+        });
+        prevCount = expenses.length;
+        callback(expenses);
+      },
+      (err) => {
+        console.warn('[expenseService] getTeamExpenses listener error:', err);
+        if (onError) onError(err);
+      }
+    );
   },
 
-  getUserExpenses: (teamId: string, userId: string, callback: (expenses: Expense[]) => void) => {
+  getUserExpenses: (teamId: string, userId: string, callback: (expenses: Expense[]) => void, onError?: (err: any) => void) => {
     const toDateSafe = (val: any) => {
       if (!val) return new Date();
       if (typeof val.toDate === 'function') return val.toDate();
       return new Date(val);
     };
 
+    let prevCount = 0;
     const q = query(
       collection(db, 'expenses'), 
       where('teamId', '==', teamId), 
       where('userId', '==', userId), 
       orderBy('date', 'desc')
     );
-    return onSnapshot(q, (snap) => {
-      const expenses = snap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          ...data,
-          date: toDateSafe(data.date),
-          createdAt: toDateSafe(data.createdAt),
-          lastEditedAt: data.lastEditedAt ? toDateSafe(data.lastEditedAt) : undefined
-        } as Expense;
-      });
-      callback(expenses);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        if (cacheRepo.shouldIgnoreSnapshot(snap, prevCount)) {
+          return;
+        }
+        const expenses = snap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ...data,
+            date: toDateSafe(data.date),
+            createdAt: toDateSafe(data.createdAt),
+            lastEditedAt: data.lastEditedAt ? toDateSafe(data.lastEditedAt) : undefined
+          } as Expense;
+        });
+        prevCount = expenses.length;
+        callback(expenses);
+      },
+      (err) => {
+        console.warn('[expenseService] getUserExpenses listener error:', err);
+        if (onError) onError(err);
+      }
+    );
   },
 
-  getEditHistory: (entityId: string, callback: (history: EditHistory[]) => void) => {
+  getEditHistory: (entityId: string, callback: (history: EditHistory[]) => void, onError?: (err: any) => void) => {
+    let prevCount = 0;
     const q = query(
       collection(db, 'editHistory'), 
       where('entityId', '==', entityId)
     );
-    return onSnapshot(q, (snap) => {
-      const history = snap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          ...data,
-          timestamp: data.timestamp ? (typeof data.timestamp.toDate === 'function' ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date()
-        } as EditHistory;
-      });
-      history.sort((a, b) => (b.timestamp?.getTime() || 0) - (a.timestamp?.getTime() || 0));
-      callback(history);
-    }, (err) => {
-      console.warn('getEditHistory listener error:', err);
-      callback([]);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        if (cacheRepo.shouldIgnoreSnapshot(snap, prevCount)) {
+          return;
+        }
+        const history = snap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ...data,
+            timestamp: data.timestamp ? (typeof data.timestamp.toDate === 'function' ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date()
+          } as EditHistory;
+        });
+        history.sort((a, b) => (b.timestamp?.getTime() || 0) - (a.timestamp?.getTime() || 0));
+        prevCount = history.length;
+        callback(history);
+      },
+      (err) => {
+        console.warn('[expenseService] getEditHistory listener error (preserving cache):', err);
+        if (onError) onError(err);
+      }
+    );
   },
 
-  getTeamEditHistory: (teamId: string, callback: (history: EditHistory[]) => void) => {
+  getTeamEditHistory: (teamId: string, callback: (history: EditHistory[]) => void, onError?: (err: any) => void) => {
+    let prevCount = 0;
     const q = query(
       collection(db, 'editHistory'), 
       where('teamId', '==', teamId)
     );
-    return onSnapshot(q, (snap) => {
-      const history = snap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          ...data,
-          timestamp: data.timestamp ? (typeof data.timestamp.toDate === 'function' ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date()
-        } as EditHistory;
-      });
-      history.sort((a, b) => (b.timestamp?.getTime() || 0) - (a.timestamp?.getTime() || 0));
-      callback(history);
-    }, (err) => {
-      console.warn('getTeamEditHistory listener error:', err);
-      callback([]);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        if (cacheRepo.shouldIgnoreSnapshot(snap, prevCount)) {
+          return;
+        }
+        const history = snap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ...data,
+            timestamp: data.timestamp ? (typeof data.timestamp.toDate === 'function' ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date()
+          } as EditHistory;
+        });
+        history.sort((a, b) => (b.timestamp?.getTime() || 0) - (a.timestamp?.getTime() || 0));
+        prevCount = history.length;
+        callback(history);
+      },
+      (err) => {
+        console.warn('[expenseService] getTeamEditHistory listener error (preserving cache):', err);
+        if (onError) onError(err);
+      }
+    );
   },
 
   markAttendance: async (params: {

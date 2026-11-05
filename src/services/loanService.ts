@@ -11,6 +11,7 @@ import {
 import { db } from './firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PersonalLoan } from '../models/types';
+import { cacheRepo, getUserScope, DEFAULT_SERVER_TIMEOUT_MS } from '../offline/cacheRepo';
 import { notificationService } from './notificationService';
 
 const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
@@ -24,54 +25,46 @@ export const loanService = {
   getLoans: async (teamId: string, currentUserId: string): Promise<PersonalLoan[]> => {
     if (!teamId || !currentUserId) return [];
 
-    let remoteLoans: PersonalLoan[] = [];
+    const scope = getUserScope(currentUserId);
+    const key = `loans_${teamId}`;
+
     try {
-      // Query 1: current user is lender
-      const lenderQuery = query(
-        collection(db, 'personal_loans'),
-        where('teamId', '==', teamId),
-        where('lenderId', '==', currentUserId)
+      return await cacheRepo.getCacheFirst(
+        scope,
+        key,
+        async () => {
+          const lenderQuery = query(
+            collection(db, 'personal_loans'),
+            where('teamId', '==', teamId),
+            where('lenderId', '==', currentUserId)
+          );
+          const borrowerQuery = query(
+            collection(db, 'personal_loans'),
+            where('teamId', '==', teamId),
+            where('borrowerId', '==', currentUserId)
+          );
+
+          const [lenderSnap, borrowerSnap] = await Promise.all([
+            getDocs(lenderQuery),
+            getDocs(borrowerQuery),
+          ]);
+
+          const map = new Map<string, PersonalLoan>();
+          lenderSnap.docs.forEach(d => {
+            map.set(d.id, { id: d.id, ...(d.data() as any) });
+          });
+          borrowerSnap.docs.forEach(d => {
+            map.set(d.id, { id: d.id, ...(d.data() as any) });
+          });
+
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+        },
+        DEFAULT_SERVER_TIMEOUT_MS
       );
-      // Query 2: current user is borrower
-      const borrowerQuery = query(
-        collection(db, 'personal_loans'),
-        where('teamId', '==', teamId),
-        where('borrowerId', '==', currentUserId)
-      );
-
-      const [lenderSnap, borrowerSnap] = await Promise.all([
-        getDocs(lenderQuery),
-        getDocs(borrowerQuery),
-      ]);
-
-      const map = new Map<string, PersonalLoan>();
-      lenderSnap.docs.forEach(d => {
-        map.set(d.id, { id: d.id, ...(d.data() as any) });
-      });
-      borrowerSnap.docs.forEach(d => {
-        map.set(d.id, { id: d.id, ...(d.data() as any) });
-      });
-
-      remoteLoans = Array.from(map.values());
-
-      // Update cache
-      await appStorage.setItem(LOCAL_LOANS_KEY, JSON.stringify(remoteLoans));
-      return remoteLoans.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } catch (e) {
-      console.warn('Failed to fetch remote loans, reading local cache:', e);
-      // Fallback to local cache filtered strictly by current user
-      try {
-        const cached = await appStorage.getItem(LOCAL_LOANS_KEY);
-        if (cached) {
-          const list: PersonalLoan[] = JSON.parse(cached);
-          return list.filter(l => 
-            l.teamId === teamId && 
-            (l.lenderId === currentUserId || l.borrowerId === currentUserId)
-          ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        }
-      } catch (err) {
-        console.error('Error reading cached loans:', err);
-      }
+      console.warn('[loanService] getLoans failed both remote and cache:', e);
       return [];
     }
   },
