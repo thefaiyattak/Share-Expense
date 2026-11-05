@@ -85,20 +85,6 @@ export default function SettlementModal({
   });
   const [datePickerMode, setDatePickerMode] = useState<'start' | 'end' | null>(null);
 
-  // User join date constraint (optional floor)
-  const userJoinDate = useMemo(() => {
-    if (!currentAppUser?.createdAt) return new Date(0);
-    const d = typeof (currentAppUser.createdAt as any)?.toDate === 'function'
-      ? (currentAppUser.createdAt as any).toDate()
-      : new Date(currentAppUser.createdAt);
-    return isNaN(d.getTime()) ? new Date(0) : d;
-  }, [currentAppUser?.createdAt]);
-
-  const minAvailableDate = useMemo(() => {
-    const d = new Date(userJoinDate);
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  }, [userJoinDate]);
-
   // Date range label
   const periodLabel = useMemo(() => {
     if (periodType === 'month') {
@@ -644,9 +630,11 @@ export default function SettlementModal({
       <MonthPickerModal
         visible={monthPickerVisible}
         selectedDate={selectedMonthDate}
-        minDate={minAvailableDate}
         maxDate={new Date()}
-        onSelect={(newDate) => setSelectedMonthDate(newDate)}
+        onSelect={(newDate) => {
+          setSelectedMonthDate(newDate);
+          setMonthPickerVisible(false);
+        }}
         onClose={() => setMonthPickerVisible(false)}
         darkMode={darkMode}
       />
@@ -656,7 +644,6 @@ export default function SettlementModal({
         visible={datePickerMode !== null}
         initialDate={datePickerMode === 'start' ? customStartDate : customEndDate}
         maximumDate={new Date()}
-        minimumDate={minAvailableDate}
         onConfirm={handleCustomDateConfirm}
         onCancel={() => setDatePickerMode(null)}
         darkMode={darkMode}
