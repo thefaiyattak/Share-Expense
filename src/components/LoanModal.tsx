@@ -12,6 +12,8 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useKeyboardVisible } from '../utils/useKeyboardVisible';
 import { getThemeColors } from '../utils/theme';
 import { AppUser, PersonalLoan } from '../models/types';
 import AppDatePickerModal from './AppDatePickerModal';
@@ -41,6 +43,9 @@ export default function LoanModal({
   onSaveLoan,
   existingLoans = [],
 }: LoanModalProps) {
+  const insets = useSafeAreaInsets();
+  const isKeyboardVisible = useKeyboardVisible();
+  const modalBottomPadding = isKeyboardVisible ? 14 : Math.max(insets.bottom + 8, 24);
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors, darkMode);
 
@@ -148,10 +153,19 @@ export default function LoanModal({
       onRequestClose={onClose}
     >
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={[styles.modalOverlay, { paddingTop: Math.max(insets.top, 12) }]}
       >
-        <View style={styles.modalContent}>
+        <View
+          style={[
+            styles.modalContent,
+            {
+              paddingBottom: modalBottomPadding,
+              paddingLeft: Math.max(insets.left + 20, 20),
+              paddingRight: Math.max(insets.right + 20, 20),
+            },
+          ]}
+        >
           <View style={styles.handleBar} />
 
           {/* Modal Header */}
