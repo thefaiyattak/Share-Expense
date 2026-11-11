@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   Modal,
   View,
@@ -7,13 +7,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  KeyboardAvoidingView,
+  Keyboard,
+  KeyboardEvent,
   Platform,
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useKeyboardVisible } from '../utils/useKeyboardVisible';
 import { getThemeColors } from '../utils/theme';
 import { AppUser, PersonalLoan } from '../models/types';
 import AppDatePickerModal from './AppDatePickerModal';
@@ -44,8 +44,59 @@ export default function LoanModal({
   existingLoans = [],
 }: LoanModalProps) {
   const insets = useSafeAreaInsets();
-  const isKeyboardVisible = useKeyboardVisible();
-  const modalBottomPadding = isKeyboardVisible ? 14 : Math.max(insets.bottom + 12, 28);
+  const [overlayHeight, setOverlayHeight] = useState(0);
+  const overlayHeightRef = useRef(0);
+  const lastKbdEventRef = useRef<KeyboardEvent | null>(null);
+  const [keyboardOverlap, setKeyboardOverlap] = useState(0);
+
+  const computeOverlap = useCallback((event: KeyboardEvent | null, currentOverlayHeight: number) => {
+    if (!event) {
+      setKeyboardOverlap(0);
+      return;
+    }
+    const kbdHeight = event.endCoordinates?.height || 0;
+    const kbdScreenY = event.endCoordinates?.screenY;
+    if (Platform.OS === 'ios') {
+      setKeyboardOverlap(kbdHeight);
+    } else if (currentOverlayHeight > 0 && typeof kbdScreenY === 'number' && kbdScreenY > 0) {
+      setKeyboardOverlap(Math.max(currentOverlayHeight - kbdScreenY, 0));
+    } else {
+      setKeyboardOverlap(kbdHeight);
+    }
+  }, []);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      lastKbdEventRef.current = e;
+      computeOverlap(e, overlayHeightRef.current);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      lastKbdEventRef.current = null;
+      setKeyboardOverlap(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [computeOverlap]);
+
+  useEffect(() => {
+    if (!visible) {
+      lastKbdEventRef.current = null;
+      setKeyboardOverlap(0);
+    }
+  }, [visible]);
+
+  const isKeyboardVisible = keyboardOverlap > 0;
+  const modalBottomPadding = isKeyboardVisible ? 12 : Math.max(insets.bottom + 24, 44);
+  const topSafePadding = Math.max(insets.top + 8, 24);
+  const modalMaxHeight =
+    overlayHeight > 0
+      ? Math.max(overlayHeight - keyboardOverlap - topSafePadding, 260)
+      : undefined;
+
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors, darkMode);
 
@@ -154,13 +205,27 @@ export default function LoanModal({
       navigationBarTranslucent={true}
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={[styles.modalOverlay, { paddingTop: Math.max(insets.top, 12) }]}
+      <View
+        style={[
+          styles.modalOverlay,
+          {
+            paddingTop: topSafePadding,
+            paddingBottom: keyboardOverlap,
+          },
+        ]}
+        onLayout={(e) => {
+          const h = e.nativeEvent.layout.height;
+          if (h > 0 && h !== overlayHeightRef.current) {
+            overlayHeightRef.current = h;
+            setOverlayHeight(h);
+            computeOverlap(lastKbdEventRef.current, h);
+          }
+        }}
       >
         <View
           style={[
             styles.modalContent,
+            modalMaxHeight ? { maxHeight: modalMaxHeight } : null,
             {
               paddingBottom: modalBottomPadding,
               paddingLeft: Math.max(insets.left + 20, 20),
@@ -195,7 +260,12 @@ export default function LoanModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={{ width: '100%' }} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={{ width: '100%', flexShrink: 1 }}
+            contentContainerStyle={{ paddingBottom: 8 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             {/* Amount Hero Card */}
             <View style={[styles.amountHeroCard, { borderColor: activeColor + '35' }]}>
               <Text style={styles.amountHeroLabel}>
@@ -206,10 +276,11 @@ export default function LoanModal({
                 <TextInput
                   style={[styles.heroAmountInput, { color: colors.textPrimary }]}
                   keyboardType="numeric"
-                  placeholder=""
+                  placeholder="0"
+                  placeholderTextColor={colors.textTertiary}
                   value={amount}
                   onChangeText={setAmount}
-                  autoFocus={true}
+                  autoFocus={false}
                 />
               </View>
             </View>
@@ -360,7 +431,7 @@ export default function LoanModal({
             </Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       {/* Date Picker Modal */}
       <AppDatePickerModal
