@@ -45,7 +45,7 @@ export default function LoanModal({
 }: LoanModalProps) {
   const insets = useSafeAreaInsets();
   const isKeyboardVisible = useKeyboardVisible();
-  const modalBottomPadding = isKeyboardVisible ? 14 : Math.max(insets.bottom + 8, 24);
+  const modalBottomPadding = isKeyboardVisible ? 14 : Math.max(insets.bottom + 12, 28);
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors, darkMode);
 
@@ -150,6 +150,8 @@ export default function LoanModal({
       animationType="slide"
       transparent={true}
       visible={visible}
+      statusBarTranslucent={true}
+      navigationBarTranslucent={true}
       onRequestClose={onClose}
     >
       <KeyboardAvoidingView
