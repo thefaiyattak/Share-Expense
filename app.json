@@ -18,7 +18,7 @@
     "android": {
       "package": "com.fyntech.expensetracker",
       "googleServicesFile": "./android/app/google-services.json",
-      "versionCode": 20,
+      "versionCode": 21,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png"
