@@ -347,7 +347,7 @@ export default function DashboardTab() {
       notifs.sort((a, b) => b.timestampMs - a.timestampMs);
       setNotifications(notifs);
     });
-  }, [currentAppUser, activeTeamIdStore]);
+  }, [currentAppUser?.id, currentAppUser?.teamId, activeTeamIdStore]);
 
   // Sync attendance listener dynamically with the month and year of the selectedDate
   useEffect(() => {

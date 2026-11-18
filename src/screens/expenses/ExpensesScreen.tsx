@@ -160,6 +160,66 @@ export default function ExpensesScreen() {
     });
   }, [visibleExpenses, memberIds]);
 
+  // Memoize computed member metrics so that list rendering doesn't recalculate on every render
+  const computedMembers = React.useMemo(() => {
+    const cardColors = ['#E8F5E9', '#FFF3E0', '#E3F2FD', '#FCE4EC', '#F3E5F5'];
+    const textColors = [colors.primaryDark, '#E65100', '#1565C0', '#C62828', '#8E24AA'];
+
+    return members.map((m, idx) => {
+      const spent = memberSpentMap[m.id] || 0;
+      const share = shares[m.id] || 0;
+      const mm = computeMemberMonth({
+        member: m,
+        monthKey: currentMonthKey,
+        spent,
+        share,
+      });
+      const wallet = mm.deposit;
+      const isSettled = mm.isSettled;
+      const isPositive = mm.isReceiving;
+      const displayBalance = Math.abs(mm.remaining);
+
+      const badgeBgColor = isSettled
+        ? (darkMode ? '#1E293B' : '#F1F5F9')
+        : (isPositive ? colors.financial.walletDepositLight : colors.financial.deficitLight);
+      const badgeTextColor = isSettled
+        ? colors.textSecondary
+        : (isPositive ? colors.financial.walletDeposit : colors.financial.deficit);
+      const initials = m.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+      const avatarBg = cardColors[idx % cardColors.length];
+      const avatarText = textColors[idx % textColors.length];
+
+      const progressVal = wallet > 0 ? Math.min(share / wallet, 1) : (share > 0 ? 1 : 0);
+
+      let displayName = m.name;
+      if (m.deleted && m.deleteAt) {
+        const deleteAtDate = typeof (m.deleteAt as any)?.toDate === 'function' ? (m.deleteAt as any).toDate() : new Date(m.deleteAt);
+        const remainingDays = Math.ceil((deleteAtDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        if (remainingDays > 0) {
+          displayName = `${m.name} (Deleting in ${remainingDays}d)`;
+        }
+      }
+
+      return {
+        m,
+        spent,
+        share,
+        wallet,
+        isSettled,
+        isPositive,
+        displayBalance,
+        badgeBgColor,
+        badgeTextColor,
+        initials,
+        avatarBg,
+        avatarText,
+        progressVal,
+        displayName,
+      };
+    });
+  }, [members, memberSpentMap, shares, currentMonthKey, darkMode, colors]);
+
   const handleCopyTeamId = async () => {
     if (activeTeamId) {
       await Clipboard.setStringAsync(activeTeamId);
@@ -621,46 +681,22 @@ export default function ExpensesScreen() {
           </View>
         </View>
 
-        {members.map((m, idx) => {
-          const spent = memberSpentMap[m.id] || 0;
-          const share = shares[m.id] || 0;
-          const mm = computeMemberMonth({
-            member: m,
-            monthKey: currentMonthKey,
-            spent,
-            share,
-          });
-          const wallet = mm.deposit;
-          const isSettled = mm.isSettled;
-          const isPositive = mm.isReceiving;
-          const displayBalance = Math.abs(mm.remaining);
-
-          const badgeBgColor = isSettled
-            ? (darkMode ? '#1E293B' : '#F1F5F9')
-            : (isPositive ? colors.financial.walletDepositLight : colors.financial.deficitLight);
-          const badgeTextColor = isSettled
-            ? colors.textSecondary
-            : (isPositive ? colors.financial.walletDeposit : colors.financial.deficit);
-          const initials = m.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-
-          const cardColors = ['#E8F5E9', '#FFF3E0', '#E3F2FD', '#FCE4EC', '#F3E5F5'];
-          const textColors = [colors.primaryDark, '#E65100', '#1565C0', '#C62828', '#8E24AA'];
-
-          const avatarBg = cardColors[idx % cardColors.length];
-          const avatarText = textColors[idx % textColors.length];
-
-          const progressVal = wallet > 0 ? Math.min(share / wallet, 1) : (share > 0 ? 1 : 0);
-
-          let displayName = m.name;
-          if (m.deleted && m.deleteAt) {
-            const deleteAtDate = typeof (m.deleteAt as any)?.toDate === 'function' ? (m.deleteAt as any).toDate() : new Date(m.deleteAt);
-            const remainingDays = Math.ceil((deleteAtDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-            if (remainingDays > 0) {
-              displayName = `${m.name} (Deleting in ${remainingDays}d)`;
-            }
-          }
-
-          return (
+        {computedMembers.map(({
+          m,
+          spent,
+          share,
+          wallet,
+          isSettled,
+          isPositive,
+          displayBalance,
+          badgeBgColor,
+          badgeTextColor,
+          initials,
+          avatarBg,
+          avatarText,
+          progressVal,
+          displayName,
+        }) => (
             <TouchableOpacity 
               key={m.id} 
               style={styles.memberCard}
@@ -731,8 +767,7 @@ export default function ExpensesScreen() {
                 ]} />
               </View>
             </TouchableOpacity>
-          );
-        })}
+        ))}
 
         {/* Settlement Plan Button */}
         <TouchableOpacity 

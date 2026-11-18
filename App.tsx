@@ -371,7 +371,7 @@ export default function App() {
       unsubExpenses();
       unsubMembers();
     };
-  }, [currentAppUser]);
+  }, [currentAppUser?.id, currentAppUser?.teamId]);
 
   return (
     <ErrorBoundary>
