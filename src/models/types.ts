@@ -22,6 +22,7 @@ export interface AppUser {
   currency: string;
   createdAt: Date;
   hasPasswordSet?: boolean;
+  hasAdFreeLifetime?: boolean;
   deactivated?: boolean;
   deleted?: boolean;
   deleteAt?: Date | null;

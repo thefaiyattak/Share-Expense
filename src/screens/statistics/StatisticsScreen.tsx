@@ -17,6 +17,7 @@ import { getThemeColors } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { G, Circle, Rect, Line, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import AppDatePickerModal from '../../components/AppDatePickerModal';
+import AdBanner from '../../components/AdBanner';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental && !(globalThis as any).nativeFabricUIManager && !(globalThis as any).__turboModuleProxy) {
   try {
@@ -847,6 +848,9 @@ export default function StatisticsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Google AdMob Banner */}
+      <AdBanner />
     </SafeAreaView>
   );
 }

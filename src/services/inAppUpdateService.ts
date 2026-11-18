@@ -1,23 +1,46 @@
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 import * as ExpoInAppUpdates from 'expo-in-app-updates';
 import { logger } from '../utils/logger';
+
+export const PLAY_STORE_URL = 'market://details?id=com.fyntech.expensetracker';
+export const PLAY_STORE_WEB_URL = 'https://play.google.com/store/apps/details?id=com.fyntech.expensetracker';
 
 class InAppUpdateService {
   private listenerCleanup: (() => void) | null = null;
   private hasCheckedThisSession = false;
 
   /**
-   * Initializes automatic check for updates on app startup.
-   * Safe to call anywhere; handles errors gracefully and skips in DEV or non-Android environments.
+   * Opens the Google Play Store page for Share Expense.
    */
-  async checkOnAppLaunch(): Promise<void> {
+  async openPlayStore(): Promise<void> {
+    try {
+      const canOpen = await Linking.canOpenURL(PLAY_STORE_URL);
+      if (canOpen) {
+        await Linking.openURL(PLAY_STORE_URL);
+      } else {
+        await Linking.openURL(PLAY_STORE_WEB_URL);
+      }
+    } catch {
+      await Linking.openURL(PLAY_STORE_WEB_URL).catch(() => {});
+    }
+  }
+
+  /**
+   * Checks if an update is available on app launch.
+   * Returns update details if available, or null.
+   */
+  async checkOnAppLaunch(): Promise<{
+    available: boolean;
+    storeVersion?: string | null;
+    isImmediate?: boolean;
+  } | null> {
     const isDev = typeof __DEV__ !== 'undefined' ? __DEV__ : false;
     if (isDev || Platform.OS !== 'android') {
-      return;
+      return null;
     }
 
     if (this.hasCheckedThisSession) {
-      return;
+      return null;
     }
     this.hasCheckedThisSession = true;
 
@@ -32,13 +55,35 @@ class InAppUpdateService {
           serverUpdateType: updateInfo.serverUpdateType,
         });
 
-        // If priority is 4 or 5, run immediate; otherwise flexible (non-intrusive)
         const isImmediate = updateInfo.serverUpdateType === 'IMMEDIATE';
-        await ExpoInAppUpdates.startUpdate(isImmediate);
+        return {
+          available: true,
+          storeVersion: updateInfo.storeVersion,
+          isImmediate,
+        };
       }
+      return { available: false };
     } catch (err: any) {
-      // Common & expected when app is not installed from Google Play (e.g. sideloaded, dev build)
       logger.debug('InAppUpdate', 'In-app update check skipped or failed', { message: err?.message });
+      return null;
+    }
+  }
+
+  /**
+   * Starts the Google Play in-app update flow, with a fallback to opening Google Play Store directly.
+   */
+  async performUpdate(isImmediate = false): Promise<boolean> {
+    try {
+      this.setupListeners();
+      const started = await ExpoInAppUpdates.startUpdate(isImmediate);
+      if (!started) {
+        await this.openPlayStore();
+      }
+      return started;
+    } catch (err: any) {
+      logger.warn('InAppUpdate', 'startUpdate failed, falling back to Play Store link', { message: err?.message });
+      await this.openPlayStore();
+      return false;
     }
   }
 
@@ -77,10 +122,19 @@ class InAppUpdateService {
       };
     } catch (err: any) {
       logger.warn('InAppUpdate', 'Manual update check failed', { message: err?.message });
+      const rawMessage = String(err?.message || '');
+      let friendlyError = 'Unable to check for updates from Google Play.';
+
+      if (rawMessage.includes('ERROR_APP_NOT_OWNED') || rawMessage.includes('-10')) {
+        friendlyError = 'App was not installed directly from Google Play Store (e.g. sideloaded or development build). In-app updates will work for users downloading from Play Store.';
+      } else if (rawMessage) {
+        friendlyError = rawMessage;
+      }
+
       return {
         available: false,
         started: false,
-        error: err?.message || 'Unable to check for updates from Google Play.',
+        error: friendlyError,
       };
     }
   }

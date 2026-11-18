@@ -27,6 +27,8 @@ import { auth } from './src/services/firebase';
 import { expenseService } from './src/services/expenseService';
 import { notificationService } from './src/services/notificationService';
 import { inAppUpdateService } from './src/services/inAppUpdateService';
+import { adsService } from './src/services/adsService';
+import { iapService } from './src/services/iapService';
 import { useStore } from './src/store/useStore';
 import { getThemeColors } from './src/utils/theme';
 import { AppUser, Expense, Attendance } from './src/models/types';
@@ -101,6 +103,13 @@ export default function App() {
   const [globalAlertTitle, setGlobalAlertTitle] = useState('');
   const [globalAlertMessage, setGlobalAlertMessage] = useState('');
   const [globalAlertButtons, setGlobalAlertButtons] = useState<any[]>([]);
+  const [globalAlertIcon, setGlobalAlertIcon] = useState<string>('information-circle-outline');
+
+  // App Update Modal State
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [updateStoreVersion, setUpdateStoreVersion] = useState<string | null>(null);
+  const [updateIsImmediate, setUpdateIsImmediate] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     Alert.alert = (title: string, message?: string, buttons?: any[]) => {
@@ -122,6 +131,8 @@ export default function App() {
 
       setGlobalAlertTitle(title || '');
       setGlobalAlertMessage(message || '');
+      const isUpdateDialog = (title || '').toLowerCase().includes('update');
+      setGlobalAlertIcon(isUpdateDialog ? 'cloud-download-outline' : 'information-circle-outline');
       let sortedButtons = [...buttons];
       const cancelIndex = sortedButtons.findIndex(b => b.style === 'cancel' || (b.text && b.text.toLowerCase() === 'cancel'));
       if (cancelIndex > -1) {
@@ -162,10 +173,20 @@ export default function App() {
     };
   }, []);
 
-  // Check for Google Play in-app updates (flexible / background)
+  // Check for Google Play in-app updates on app startup
   useEffect(() => {
-    inAppUpdateService.checkOnAppLaunch();
+    let active = true;
+    (async () => {
+      const res = await inAppUpdateService.checkOnAppLaunch();
+      if (active && res?.available) {
+        setUpdateStoreVersion(res.storeVersion || null);
+        setUpdateIsImmediate(Boolean(res.isImmediate));
+        setUpdateModalVisible(true);
+      }
+    })();
+
     return () => {
+      active = false;
       inAppUpdateService.cleanup();
     };
   }, []);
@@ -287,6 +308,14 @@ export default function App() {
       });
     }
   }, [initializing]);
+
+  // Initialize Google Mobile Ads and UMP consent once UI has mounted, Android only
+  useEffect(() => {
+    if (!initializing && Platform.OS === 'android') {
+      adsService.initAds().catch(() => {});
+      iapService.init(currentAppUser?.id).catch(() => {});
+    }
+  }, [initializing, currentAppUser?.id]);
 
   // Real-time Database Listeners when logged in
   useEffect(() => {
@@ -422,6 +451,136 @@ export default function App() {
           </Animated.View>
         )}
 
+        {/* App Update Prompt Modal (App Launch) */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={updateModalVisible}
+          onRequestClose={() => {
+            if (!updateIsImmediate) {
+              setUpdateModalVisible(false);
+            }
+          }}
+        >
+          <View style={styles.modalOverlayCentered}>
+            <View
+              style={{
+                backgroundColor: colors.surface,
+                borderRadius: 24,
+                padding: 24,
+                width: '84%',
+                maxWidth: 340,
+                alignItems: 'center',
+                borderWidth: 1,
+                borderColor: colors.divider,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.18,
+                shadowRadius: 16,
+                elevation: 8,
+              }}
+            >
+              <View
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 28,
+                  backgroundColor: colors.primary + '18',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 14,
+                }}
+              >
+                <Ionicons name="cloud-download-outline" size={30} color={colors.primary} />
+              </View>
+
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: colors.textPrimary,
+                  marginBottom: 6,
+                  textAlign: 'center',
+                }}
+              >
+                Update Available
+              </Text>
+
+              <Text
+                style={{
+                  fontSize: 13,
+                  color: colors.textSecondary,
+                  textAlign: 'center',
+                  lineHeight: 19,
+                  marginBottom: 20,
+                }}
+              >
+                A newer version of Share Expense{updateStoreVersion ? ` (${updateStoreVersion})` : ''} is ready on Google Play Store with latest improvements and fixes.
+              </Text>
+
+              <View style={{ width: '100%', gap: 10 }}>
+                {/* Update Now Button */}
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: colors.primary,
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    width: '100%',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexDirection: 'row',
+                    minHeight: 46,
+                  }}
+                  disabled={updating}
+                  onPress={async () => {
+                    setUpdating(true);
+                    try {
+                      await inAppUpdateService.performUpdate(updateIsImmediate);
+                    } finally {
+                      setUpdating(false);
+                      setUpdateModalVisible(false);
+                    }
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Update App Now"
+                >
+                  {updating ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="download-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+                        Update App
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                {/* Update Later Button */}
+                {!updateIsImmediate && (
+                  <TouchableOpacity
+                    style={{
+                      paddingVertical: 11,
+                      borderRadius: 12,
+                      width: '100%',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    disabled={updating}
+                    onPress={() => setUpdateModalVisible(false)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Update Later"
+                  >
+                    <Text style={{ color: colors.textSecondary, fontWeight: '600', fontSize: 13 }}>
+                      Update Later
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </Modal>
+
         {/* Global Modern Alert Modal */}
         <Modal
           animationType="fade"
@@ -446,17 +605,15 @@ export default function App() {
               elevation: 8
             }}>
               <View style={{
-                width: 52,
-                height: 52,
-                borderRadius: 16,
-                backgroundColor: colors.primary + '15',
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                backgroundColor: colors.primary + '18',
                 alignItems: 'center',
                 justifyContent: 'center',
-                marginBottom: 12,
-                borderWidth: 1,
-                borderColor: colors.primary + '30'
+                marginBottom: 14,
               }}>
-                <Ionicons name="information-circle" size={28} color={colors.primary} />
+                <Ionicons name={globalAlertIcon as any} size={30} color={colors.primary} />
               </View>
 
               <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginBottom: !!globalAlertMessage ? 6 : 18, textAlign: 'center' }}>

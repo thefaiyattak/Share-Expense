@@ -35,6 +35,7 @@ import { GlobalLoader } from '../../components/GlobalLoader';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
 import AppTutorialModal from '../../components/AppTutorialModal';
 import LoanModal from '../../components/LoanModal';
+import AdBanner from '../../components/AdBanner';
 import { loanService } from '../../services/loanService';
 import { PersonalLoan, Expense } from '../../models/types';
 import { getMemberMonthDeposit } from '../../utils/monthBalance';
@@ -1647,6 +1648,9 @@ export default function DashboardTab() {
           );
         })}
       </ScrollView>
+
+      {/* Google AdMob Banner */}
+      <AdBanner />
 
       {/* Create Group Modal */}
       <Modal

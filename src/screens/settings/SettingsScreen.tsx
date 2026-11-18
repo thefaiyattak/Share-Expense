@@ -32,6 +32,8 @@ import { outbox } from '../../offline/outbox';
 import { authService } from '../../services/authService';
 import { notificationService } from '../../services/notificationService';
 import { inAppUpdateService } from '../../services/inAppUpdateService';
+import { adsService, useAdsStore } from '../../services/adsService';
+import { iapService, useIapStore } from '../../services/iapService';
 import { getThemeColors } from '../../utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { AppUser, UserRole } from '../../models/types';
@@ -60,6 +62,46 @@ export default function SettingsScreen() {
 
   const colors = getThemeColors(darkMode);
   const styles = getStyles(colors);
+  const isPrivacyOptionsRequired = useAdsStore((state) => state.isPrivacyOptionsRequired);
+  const isAdFree = useIapStore((state) => state.isAdFree) || Boolean(currentAppUser?.hasAdFreeLifetime);
+  const productPrice = useIapStore((state) => state.productPrice);
+  const isPurchasing = useIapStore((state) => state.isPurchasing);
+  const isRestoring = useIapStore((state) => state.isRestoring);
+  const isOnline = useNetworkStore((state) => state.isOnline);
+  const isPriceAvailable = isOnline && Boolean(productPrice);
+  const displayPriceText = isPriceAvailable ? productPrice : 'Price unavailable';
+
+  const handleBuyAdFree = async () => {
+    if (!currentAppUser?.id) return;
+    const res = await iapService.purchaseLifetimeAdFree(currentAppUser.id);
+    if (!res.success && res.message) {
+      // In development mode on emulators, offer simulation if Play Console SKU is not active yet
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        Alert.alert(
+          'Google Play Store Notice',
+          `${res.message}\n\nNote: Google Play in-app purchases require the product 'lifetime_ad_free' to be published in Google Play Console (Internal testing track).\n\nWould you like to simulate unlocking Lifetime Ad-Free for testing?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Simulate Unlock',
+              onPress: async () => {
+                await iapService.grantLifetimeAdFree();
+                Alert.alert('Success', 'Lifetime Ad-Free simulated successfully!');
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert('In-App Purchase', res.message);
+      }
+    }
+  };
+
+  const handleRestorePurchases = async () => {
+    if (!currentAppUser?.id) return;
+    const res = await iapService.restorePurchases(currentAppUser.id);
+    Alert.alert('Restore Purchases', res.message);
+  };
 
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [createModalVisible, setCreateModalVisible] = useState(false);
@@ -90,6 +132,7 @@ export default function SettingsScreen() {
 
   // Account Security state
   const [securityModalVisible, setSecurityModalVisible] = useState(false);
+  const [adFreeModalVisible, setAdFreeModalVisible] = useState(false);
   const [currentPasswordInput, setCurrentPasswordInput] = useState('');
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
@@ -1003,7 +1046,17 @@ export default function SettingsScreen() {
           );
         }
       } else if (res.error) {
-        Alert.alert('Update Check', res.error);
+        Alert.alert(
+          'Google Play Update Notice',
+          res.error,
+          [
+            { text: 'Close', style: 'cancel' },
+            {
+              text: 'View on Play Store',
+              onPress: () => inAppUpdateService.openPlayStore(),
+            },
+          ]
+        );
       } else {
         Alert.alert('App is Up to Date', 'You are using the latest version of Share Expense (v1.0.0-final).');
       }
@@ -1196,6 +1249,24 @@ export default function SettingsScreen() {
           })}
         </View>
 
+        {/* Ad-Free Experience */}
+        <Text style={styles.sectionHeaderLabel}>Ad-Free Experience</Text>
+        <View style={styles.sectionContent}>
+          {renderItem(
+            isAdFree ? 'checkmark-circle-outline' : 'sparkles-outline',
+            'Ad-Free Experience',
+            () => setAdFreeModalVisible(true),
+            isAdFree ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary, marginRight: 6 }}>
+                  Active ✓
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+              </View>
+            ) : undefined
+          )}
+        </View>
+
         {/* About App */}
         <Text style={styles.sectionHeaderLabel}>About</Text>
         <View style={styles.sectionContent}>
@@ -1208,6 +1279,10 @@ export default function SettingsScreen() {
             handleCheckForUpdates,
             checkingUpdate ? <ActivityIndicator size="small" color={colors.primary} /> : undefined
           )}
+          {isPrivacyOptionsRequired &&
+            renderItem('shield-checkmark-outline', 'Privacy and ad choices', async () => {
+              await adsService.showPrivacyOptionsForm();
+            })}
         </View>
 
         {/* Account Management Action Buttons */}
@@ -1696,6 +1771,132 @@ export default function SettingsScreen() {
               >
                 <Text style={styles.modalCancelBtnText}>Cancel</Text>
               </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Ad-Free Experience Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={adFreeModalVisible}
+        onRequestClose={() => setAdFreeModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalContent, { maxHeight: '90%', paddingBottom: modalBottomPadding }]}>
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="sparkles-outline" size={20} color={colors.primary} style={{ marginRight: 8 }} />
+                <Text style={styles.modalTitle}>Ad-Free Experience</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setAdFreeModalVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+              {isAdFree ? (
+                <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                  <View
+                    style={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: 32,
+                      backgroundColor: colors.primary + '18',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 16,
+                    }}
+                  >
+                    <Ionicons name="checkmark-circle" size={38} color={colors.primary} />
+                  </View>
+                  <Text style={[styles.modalTitle, { textAlign: 'center', alignSelf: 'center', marginBottom: 8 }]}>
+                    Ad-Free Unlocked
+                  </Text>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: 16 }}>
+                    Lifetime ad-free experience is active on your account. Thank you for supporting the app!
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.modalSubmitBtn, { backgroundColor: colors.primary, marginTop: 24 }]}
+                    onPress={() => setAdFreeModalVisible(false)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Done"
+                  >
+                    <Text style={styles.modalSubmitBtnText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View>
+                  {/* Feature Highlights Card */}
+                  <View
+                    style={{
+                      backgroundColor: colors.inputBg,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      padding: 16,
+                      marginBottom: 18,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>
+                        Lifetime Purchase
+                      </Text>
+                      <Text style={[styles.adFreePriceText, { color: isPriceAvailable ? colors.primary : colors.textSecondary }]}>
+                        {displayPriceText}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19 }}>
+                      Enjoy an uninterrupted experience with zero banner ads across all screens forever. One-time payment tied to your account.
+                    </Text>
+                  </View>
+
+                  {/* Unlock Button */}
+                  <TouchableOpacity
+                    style={[
+                      styles.adFreePrimaryBtn,
+                      (!isPriceAvailable || isPurchasing) && styles.adFreeBtnDisabled,
+                      { marginBottom: 8 },
+                    ]}
+                    onPress={handleBuyAdFree}
+                    disabled={!isPriceAvailable || isPurchasing}
+                    accessibilityRole="button"
+                    accessibilityLabel="Unlock Lifetime"
+                  >
+                    {isPurchasing && (
+                      <ActivityIndicator
+                        size="small"
+                        color={colors.onPrimary}
+                        style={{ marginEnd: 6 }}
+                      />
+                    )}
+                    <Text style={styles.adFreePrimaryBtnText}>Unlock Lifetime ({displayPriceText})</Text>
+                  </TouchableOpacity>
+
+                  {/* Restore Button */}
+                  <TouchableOpacity
+                    style={styles.adFreeRestoreBtn}
+                    onPress={handleRestorePurchases}
+                    disabled={isRestoring}
+                    accessibilityRole="button"
+                    accessibilityLabel="Restore purchase"
+                  >
+                    {isRestoring ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Text style={styles.adFreeRestoreBtnText}>Restore previous purchase</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
@@ -2935,6 +3136,74 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontSize: 13.5,
     color: colors.textPrimary,
     marginLeft: 12,
+  },
+  adFreeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  adFreeTextCol: {
+    flex: 1,
+    marginStart: 12,
+    marginEnd: 8,
+  },
+  adFreeTitle: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  adFreeSubtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  adFreePriceText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+  },
+  adFreeDivider: {
+    height: 1,
+    backgroundColor: colors.divider,
+    width: '100%',
+  },
+  adFreeActionRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    gap: 8,
+  },
+  adFreePrimaryBtn: {
+    width: '100%',
+    minHeight: 44,
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  adFreeBtnDisabled: {
+    opacity: 0.55,
+  },
+  adFreePrimaryBtnText: {
+    color: colors.onPrimary,
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  adFreeRestoreBtn: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adFreeRestoreBtnText: {
+    color: colors.primary,
+    fontWeight: '600',
+    fontSize: 13,
   },
   accountActionBtn: {
     flex: 1,

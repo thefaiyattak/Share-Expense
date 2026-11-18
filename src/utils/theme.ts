@@ -48,6 +48,8 @@ const lightThemeCache = {
   cardBg: '#FFFFFF',
   border: '#E9ECEF',
   inputBg: '#F8F9FA',
+  onPrimary: '#FFFFFF',
+  buttonText: '#FFFFFF',
 
   financial: {
     walletDeposit: FINANCIAL_COLORS.walletDeposit,
@@ -78,6 +80,8 @@ const darkThemeCache = {
   cardBg: '#1E1E1E',
   border: '#333333',
   inputBg: '#262626',
+  onPrimary: '#FFFFFF',
+  buttonText: '#FFFFFF',
 
   financial: {
     walletDeposit: '#81C784',

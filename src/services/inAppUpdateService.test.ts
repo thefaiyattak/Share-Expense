@@ -12,6 +12,10 @@ vi.mock('react-native', () => ({
   Platform: {
     OS: 'android',
   },
+  Linking: {
+    canOpenURL: vi.fn().mockResolvedValue(true),
+    openURL: vi.fn().mockResolvedValue(undefined),
+  },
 }));
 
 import { inAppUpdateService } from './inAppUpdateService';
