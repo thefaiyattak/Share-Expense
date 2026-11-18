@@ -1,6 +1,6 @@
 import { runTransaction, doc, serverTimestamp, Transaction } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import { outbox, OutboxOp, OpType, isNonRetryableError } from './outbox';
+import { outbox, OutboxOp, OpType, isNonRetryableError, MAX_RETRY_ATTEMPTS } from './outbox';
 import { executors, ExecutorFn } from './executors';
 import { useNetworkStore } from './network';
 import { withTimeout } from './cacheRepo';
@@ -121,10 +121,11 @@ export class SyncEngine {
             failedEntityIds.add(op.entityId);
           }
 
-          if (isNonRetryableError(err)) {
+          const newAttempts = op.attempts + 1;
+          if (isNonRetryableError(err) || newAttempts >= MAX_RETRY_ATTEMPTS) {
             await outbox.markPermanentlyFailed(op.opId, err?.message || String(err));
           } else {
-            await outbox.markFailed(op.opId, err?.message || String(err), op.attempts + 1);
+            await outbox.markFailed(op.opId, err?.message || String(err), newAttempts);
           }
         }
       }

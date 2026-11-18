@@ -93,7 +93,8 @@ export async function uploadBlobToFirebaseStorage(localUri: string, storagePath:
     throw new Error('Failed to create Blob from local attachment URI');
   }
 
-  await uploadBytes(storageRef, blob);
+  const contentType = blob.type || (storagePath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg');
+  await uploadBytes(storageRef, blob, { contentType });
   const downloadUrl = await getDownloadURL(storageRef);
   return downloadUrl;
 }

@@ -31,6 +31,8 @@ describe('SyncEngine & Outbox Logic', () => {
       expect(isNonRetryableError(new Error('FirebaseError: permission-denied'))).toBe(true);
       expect(isNonRetryableError(new Error('invalid-argument: Bad price'))).toBe(true);
       expect(isNonRetryableError(new Error('Document not-found'))).toBe(true);
+      expect(isNonRetryableError(new Error('storage/unauthorized: User lacks permission'))).toBe(true);
+      expect(isNonRetryableError(new Error('storage/bucket-not-found'))).toBe(true);
       expect(isNonRetryableError(new Error('Network request failed'))).toBe(false);
       expect(isNonRetryableError(new Error('Timeout'))).toBe(false);
     });
@@ -329,6 +331,39 @@ describe('SyncEngine & Outbox Logic', () => {
       expect(m.monthlySettlements?.['2026-11']).toBe(2485); // 0 + 2485
       expect(m.monthlyCarriedOut?.['2026-11']).toBe(300);
       expect(m.monthlyCarryIn?.['2026-12']).toBe(300);
+    });
+  });
+
+  describe('Max Retry Limit and Permanent Failure', () => {
+    it('marks operation permanently failed after reaching MAX_RETRY_ATTEMPTS', async () => {
+      const fakeRunner: TransactionRunner = async () => {
+        throw new Error('Temporary network glitch');
+      };
+
+      const engine = new SyncEngine(fakeRunner);
+
+      const op = await outbox.enqueue({
+        uid: 'u_retry',
+        teamId: 't1',
+        type: 'addExpense',
+        payload: { id: 'exp_fail', itemName: 'Coffee', price: 50 },
+        opId: 'op_retry_test',
+      });
+
+      // Simulate 4 prior attempts and backoff passed
+      await localDb.updateOutboxStatus('op_retry_test', 'pending', {
+        attempts: 4,
+        nextAttemptAt: 0,
+        lastError: 'Prior glitch',
+      });
+
+      // 5th attempt: should mark permanently failed
+      await engine.flush('u_retry');
+
+      const allOps = await outbox.getAllOps('u_retry');
+      const targetOp = allOps.find((o) => o.opId === 'op_retry_test');
+      expect(targetOp?.status).toBe('failed');
+      expect(targetOp?.lastError).toContain('Temporary network glitch');
     });
   });
 });

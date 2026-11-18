@@ -42,11 +42,18 @@ export function calculateBackoffMs(attempts: number): number {
   return BACKOFF_SCHEDULE[idx];
 }
 
+export const MAX_RETRY_ATTEMPTS = 5;
+
 export function isNonRetryableError(error: any): boolean {
   const msg = (error?.message || error?.code || String(error)).toLowerCase();
   return (
     msg.includes('permission-denied') ||
     msg.includes('permission_denied') ||
+    msg.includes('storage/unauthorized') ||
+    msg.includes('storage/canceled') ||
+    msg.includes('storage/invalid-argument') ||
+    msg.includes('storage/project-not-found') ||
+    msg.includes('storage/bucket-not-found') ||
     msg.includes('invalid-argument') ||
     msg.includes('invalid_argument') ||
     msg.includes('not-found') ||
