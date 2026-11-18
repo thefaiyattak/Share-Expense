@@ -9,7 +9,7 @@ import {
   Share,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useStore } from '../store/useStore';
 import { getThemeColors } from '../utils/theme';
 import { settlementService, SettlementSummary } from '../services/settlementService';

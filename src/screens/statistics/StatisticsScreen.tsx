@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStore } from '../../store/useStore';
 import { expenseService } from '../../services/expenseService';
 import { getThemeColors } from '../../utils/theme';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import Svg, { G, Circle, Rect, Line, Text as SvgText, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import AppDatePickerModal from '../../components/AppDatePickerModal';
 import AdBanner from '../../components/AdBanner';

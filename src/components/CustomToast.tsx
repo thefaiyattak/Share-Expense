@@ -7,7 +7,7 @@ import {
   TouchableOpacity, 
   Platform 
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useStore, ToastType } from '../store/useStore';
 import { getThemeColors } from '../utils/theme';
 

@@ -8,7 +8,7 @@ import {
   FlatList, 
   ActivityIndicator 
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { getThemeColors } from '../utils/theme';
 import { useStore } from '../store/useStore';
 import { EditHistory } from '../models/types';

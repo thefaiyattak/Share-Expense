@@ -16,7 +16,7 @@ import {
 import { authService } from '../../services/authService';
 import { useStore } from '../../store/useStore';
 import { getThemeColors } from '../../utils/theme';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 let GoogleSignin: any = null;
 let statusCodes: any = { SIGN_IN_CANCELLED: '12501', IN_PROGRESS: '12502', PLAY_SERVICES_NOT_AVAILABLE: '12500' };
 try {

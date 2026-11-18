@@ -35,7 +35,7 @@ import { inAppUpdateService } from '../../services/inAppUpdateService';
 import { adsService, useAdsStore } from '../../services/adsService';
 import { iapService, useIapStore } from '../../services/iapService';
 import { getThemeColors } from '../../utils/theme';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppUser, UserRole } from '../../models/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';

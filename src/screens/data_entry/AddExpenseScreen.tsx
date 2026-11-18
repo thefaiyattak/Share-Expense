@@ -22,7 +22,7 @@ import { authService } from '../../services/authService';
 import { persistAttachment } from '../../offline/attachments';
 import { enqueueWrite } from '../../offline/syncEngine';
 import { getThemeColors } from '../../utils/theme';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { MealCategory } from '../../models/types';
 
