@@ -8,11 +8,10 @@ const appStorage = (AsyncStorage as any)?.default || AsyncStorage;
 
 export type NotificationType = 'newExpense' | 'editExpense' | 'newMember' | 'walletUpdates' | 'adjustments' | 'transfers' | 'monthlyReports' | 'moneyCircle';
 
-let Notifications: typeof import('expo-notifications') | null = null;
+import * as Notifications from 'expo-notifications';
 
 try {
-  Notifications = require('expo-notifications');
-  Notifications?.setNotificationHandler({
+  Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,

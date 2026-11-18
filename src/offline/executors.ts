@@ -68,10 +68,13 @@ export const executors: Record<string, ExecutorFn> = {
 
     // In-app Notification doc in same transaction
     const notifRef = doc(collection(db, 'notifications'));
+    const notifDesc = `${expense.userName || 'Someone'} added "${expense.itemName}"`;
     tx.set(notifRef, {
       teamId: op.teamId,
       title: 'New Expense Added',
-      description: `${expense.userName || 'Someone'} added "${expense.itemName}"`,
+      desc: notifDesc,
+      description: notifDesc,
+      notifType: 'newExpense',
       type: 'expense_added',
       createdAt: serverTimestamp(),
       readBy: [op.uid],
@@ -102,10 +105,13 @@ export const executors: Record<string, ExecutorFn> = {
 
     if (items.length > 0) {
       const notifRef = doc(collection(db, 'notifications'));
+      const batchDesc = `Added ${items.length} new items`;
       tx.set(notifRef, {
         teamId: op.teamId,
         title: 'Batch Expenses Added',
-        description: `Added ${items.length} new items`,
+        desc: batchDesc,
+        description: batchDesc,
+        notifType: 'newExpense',
         type: 'expense_added',
         createdAt: serverTimestamp(),
         readBy: [op.uid],
@@ -282,13 +288,17 @@ export const executors: Record<string, ExecutorFn> = {
     tx.set(docRef, cleaned);
 
     const notifRef = doc(collection(db, 'notifications'));
+    const loanDesc = `${loan.lenderName} gave ${loan.amount} to ${loan.borrowerName}`;
     tx.set(notifRef, {
       teamId: op.teamId,
       title: 'Personal Loan Recorded',
-      description: `${loan.lenderName} gave ${loan.amount} to ${loan.borrowerName}`,
-      type: 'transfers',
+      desc: loanDesc,
+      description: loanDesc,
+      notifType: 'moneyCircle',
+      type: 'moneyCircle',
       createdAt: serverTimestamp(),
       readBy: [op.uid],
+      targetUserIds: [loan.lenderId, loan.borrowerId],
     });
   },
 

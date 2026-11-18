@@ -276,7 +276,7 @@ export default function DashboardTab() {
           }
         }
 
-        const notifType = data.notifType || 'newExpense';
+        const notifType = data.notifType || (data.type === 'expense_added' ? 'newExpense' : data.type) || 'newExpense';
 
         // Filter based on user preferences
         if (notifType === 'newExpense' && !prefs.newExpense) return;
@@ -330,7 +330,7 @@ export default function DashboardTab() {
         notifs.push({
           id: d.id,
           title: data.title || 'Notification',
-          desc: data.desc || '',
+          desc: data.desc || data.description || '',
           time: timeLabel,
           timestampMs: createdDate.getTime(),
           notifType,
