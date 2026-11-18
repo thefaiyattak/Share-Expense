@@ -1058,7 +1058,7 @@ export default function SettingsScreen() {
           ]
         );
       } else {
-        Alert.alert('App is Up to Date', 'You are using the latest version of Share Expense (v1.0.0-final).');
+        Alert.alert('App is Up to Date', 'You are using the latest version of Share Expense (v1.0.10).');
       }
     } finally {
       setCheckingUpdate(false);
@@ -2176,7 +2176,7 @@ export default function SettingsScreen() {
 
             <View style={{ backgroundColor: colors.primary + '15', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, marginBottom: 12 }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>
-                Version 1.0.0-final
+                Version 1.0.10
               </Text>
             </View>
 
