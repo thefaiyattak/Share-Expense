@@ -13,9 +13,9 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
-let SplashScreen: any = null;
+import * as SplashScreen from 'expo-splash-screen';
+
 try {
-  SplashScreen = require('expo-splash-screen');
   SplashScreen.preventAutoHideAsync().catch(() => {});
 } catch (e) {}
 

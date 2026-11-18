@@ -43,7 +43,15 @@
           "color": "#2E7D32"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/icon.png",
+          "resizeMode": "contain"
+        }
+      ]
     ]
   }
 }
