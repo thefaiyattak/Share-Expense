@@ -1,9 +1,10 @@
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform, Alert } from 'react-native';
 import { AppUser, Expense } from '../models/types';
 import { getMemberMonthDeposit } from '../utils/monthBalance';
+
+const getPrint = () => import('expo-print');
+const getSharing = () => import('expo-sharing');
 
 export const pdfService = {
   generatePdf: async (params: {
@@ -275,11 +276,13 @@ export const pdfService = {
       </html>
     `;
 
+    const Print = await getPrint();
     const { uri } = await Print.printToFileAsync({ html: htmlContent });
     let finalUri = uri;
     if (params.fileName) {
       finalUri = await placeNamedFile(finalUri, params.fileName, 'pdf');
     }
+    const Sharing = await getSharing();
     if (!params.skipShare && (await Sharing.isAvailableAsync())) {
       await Sharing.shareAsync(finalUri);
     }
@@ -341,6 +344,7 @@ export const pdfService = {
       await FileSystem.writeAsStringAsync(filename, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
     }
     
+    const Sharing = await getSharing();
     if (!params.skipShare && (await Sharing.isAvailableAsync())) {
       await Sharing.shareAsync(filename, { mimeType: 'text/csv', dialogTitle: 'Share CSV Statement' });
     }
@@ -348,6 +352,7 @@ export const pdfService = {
   },
 
   shareFile: async (uri: string, mimeType: string, dialogTitle?: string): Promise<boolean> => {
+    const Sharing = await getSharing();
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(uri, { mimeType, dialogTitle: dialogTitle || 'Share Report' });
       return true;
@@ -393,6 +398,7 @@ export const pdfService = {
         return true;
       } else {
         // iOS provides native save to file options directly through the Sharing Sheet
+        const Sharing = await getSharing();
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(localUri, { mimeType, dialogTitle: 'Save Report' });
           return true;

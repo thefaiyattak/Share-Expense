@@ -173,23 +173,27 @@ export default function App() {
     };
   }, []);
 
-  // Check for Google Play in-app updates on app startup
+  // Check for Google Play in-app updates after initial render and splash dismiss
   useEffect(() => {
+    if (initializing) return;
     let active = true;
-    (async () => {
-      const res = await inAppUpdateService.checkOnAppLaunch();
-      if (active && res?.available) {
-        setUpdateStoreVersion(res.storeVersion || null);
-        setUpdateIsImmediate(Boolean(res.isImmediate));
-        setUpdateModalVisible(true);
-      }
-    })();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await inAppUpdateService.checkOnAppLaunch();
+        if (active && res?.available) {
+          setUpdateStoreVersion(res.storeVersion || null);
+          setUpdateIsImmediate(Boolean(res.isImmediate));
+          setUpdateModalVisible(true);
+        }
+      } catch {}
+    }, 2500);
 
     return () => {
       active = false;
+      clearTimeout(timer);
       inAppUpdateService.cleanup();
     };
-  }, []);
+  }, [initializing]);
 
   // Auth State Listener: waits for SDK initial session resolution and persistent user state
   useEffect(() => {
@@ -254,10 +258,6 @@ export default function App() {
                 setCurrentAppUser(fallback);
               }
 
-              if (appUser?.id || cachedUser?.id) {
-                notificationService.registerForPushNotificationsAsync(appUser?.id || cachedUser!.id).catch(() => {});
-              }
-
               if (user.email) {
                 const teams = await authService.getUserTeams(user.email);
                 if (isMounted && teams) {
@@ -309,11 +309,24 @@ export default function App() {
     }
   }, [initializing]);
 
-  // Initialize Google Mobile Ads and UMP consent once UI has mounted, Android only
+  // Defer push notification registration until after initial render
+  useEffect(() => {
+    if (!initializing && currentAppUser?.id) {
+      const timer = setTimeout(() => {
+        notificationService.registerForPushNotificationsAsync(currentAppUser.id).catch(() => {});
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [initializing, currentAppUser?.id]);
+
+  // Initialize Google Mobile Ads and UMP consent once UI has settled, Android only
   useEffect(() => {
     if (!initializing && Platform.OS === 'android') {
-      adsService.initAds().catch(() => {});
-      iapService.init(currentAppUser?.id).catch(() => {});
+      const timer = setTimeout(() => {
+        adsService.initAds().catch(() => {});
+        iapService.init(currentAppUser?.id).catch(() => {});
+      }, 1200);
+      return () => clearTimeout(timer);
     }
   }, [initializing, currentAppUser?.id]);
 
