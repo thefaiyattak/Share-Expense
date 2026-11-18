@@ -2420,7 +2420,7 @@ export default function DashboardTab() {
               {/* Feature Image */}
               <View style={{ width: '100%', height: 340, borderRadius: 16, overflow: 'hidden', backgroundColor: colors.surface, marginBottom: 14, borderWidth: 1, borderColor: colors.border }}>
                 <Image 
-                  source={require('../../../assets/tutorials/01_understand_your_dashboard.png')} 
+                  source={require('../../../assets/tutorials/01_understand_your_dashboard.webp')} 
                   style={{ width: '100%', height: '100%' }} 
                   resizeMode="contain" 
                 />
