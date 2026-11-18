@@ -36,6 +36,10 @@ export async function persistAttachment(sourceUri: string): Promise<string> {
 
   try {
     await FileSystem.copyAsync({ from: sourceUri, to: destUri });
+    // Clean up temporary image picker / cache file to free device storage
+    if (sourceUri.includes('/ImagePicker/') || sourceUri.includes('/cache/')) {
+      FileSystem.deleteAsync(sourceUri, { idempotent: true }).catch(() => {});
+    }
     return destUri;
   } catch (err) {
     console.warn('[attachments] copyAsync failed, falling back to sourceUri:', err);

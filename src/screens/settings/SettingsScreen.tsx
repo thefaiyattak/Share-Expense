@@ -175,7 +175,7 @@ export default function SettingsScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.8,
+      quality: 0.7,
     });
     if (!result.canceled && result.assets?.[0]?.uri) {
       setNewTutorialImageUri(result.assets[0].uri);
@@ -489,7 +489,7 @@ export default function SettingsScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.8,
+      quality: 0.7,
     });
     if (!result.canceled && result.assets?.[0]?.uri) {
       const uri = result.assets[0].uri;
@@ -645,7 +645,7 @@ export default function SettingsScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.8,
+      quality: 0.7,
     });
     if (!result.canceled && result.assets?.[0]?.uri) {
       const uri = result.assets[0].uri;

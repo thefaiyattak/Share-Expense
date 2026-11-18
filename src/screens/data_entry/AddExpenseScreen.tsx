@@ -75,7 +75,7 @@ export default function AddExpenseScreen() {
             }
             const result = await ImagePicker.launchCameraAsync({
               mediaTypes: ['images'],
-              quality: 0.8,
+              quality: 0.7,
             });
             if (!result.canceled && result.assets?.[0]?.uri) {
               const permanentUri = await persistAttachment(result.assets[0].uri);
@@ -93,7 +93,7 @@ export default function AddExpenseScreen() {
             }
             const result = await ImagePicker.launchImageLibraryAsync({
               mediaTypes: ['images'],
-              quality: 0.8,
+              quality: 0.7,
             });
             if (!result.canceled && result.assets?.[0]?.uri) {
               const permanentUri = await persistAttachment(result.assets[0].uri);
