@@ -27,8 +27,6 @@ import { auth } from './src/services/firebase';
 import { expenseService } from './src/services/expenseService';
 import { notificationService } from './src/services/notificationService';
 import { inAppUpdateService } from './src/services/inAppUpdateService';
-import { adsService } from './src/services/adsService';
-import { iapService } from './src/services/iapService';
 import { useStore } from './src/store/useStore';
 import { getThemeColors } from './src/utils/theme';
 import { AppUser, Expense, Attendance } from './src/models/types';
@@ -315,17 +313,6 @@ export default function App() {
       const timer = setTimeout(() => {
         notificationService.registerForPushNotificationsAsync(currentAppUser.id).catch(() => {});
       }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [initializing, currentAppUser?.id]);
-
-  // Initialize Google Mobile Ads and UMP consent once UI has settled, Android only
-  useEffect(() => {
-    if (!initializing && Platform.OS === 'android') {
-      const timer = setTimeout(() => {
-        adsService.initAds().catch(() => {});
-        iapService.init(currentAppUser?.id).catch(() => {});
-      }, 1200);
       return () => clearTimeout(timer);
     }
   }, [initializing, currentAppUser?.id]);

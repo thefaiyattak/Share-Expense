@@ -11,14 +11,6 @@
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
-# Google Mobile Ads
--keep class com.google.android.gms.ads.** { *; }
--dontwarn com.google.android.gms.ads.**
-
-# In-App Purchases & Nitro Modules
--keep class com.dooboolab.rniap.** { *; }
--keep class com.margelo.nitro.** { *; }
-
 # React Native Screens & Gesture Handler
 -keep class com.swmansion.rnscreens.** { *; }
 -keep class com.swmansion.gesturehandler.** { *; }

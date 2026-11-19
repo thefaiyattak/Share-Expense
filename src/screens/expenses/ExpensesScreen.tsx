@@ -31,7 +31,6 @@ import ChangeHistoryModal from '../../components/ChangeHistoryModal';
 import MonthPickerModal from '../../components/MonthPickerModal';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
 import SettlementModal from '../../components/SettlementModal';
-import AdBanner from '../../components/AdBanner';
 import { settlementService } from '../../services/settlementService';
 
 import * as Clipboard from 'expo-clipboard';
@@ -907,9 +906,6 @@ export default function ExpensesScreen() {
           darkMode={darkMode}
         />
       </ScrollView>
-
-      {/* Google AdMob Banner */}
-      <AdBanner />
     </SafeAreaView>
   );
 }
