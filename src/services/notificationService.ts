@@ -145,7 +145,24 @@ export const notificationService = {
       console.error('Failed to save notification to database:', e);
     }
 
-    // 2. REMOTE CROSS-DEVICE PUSH NOTIFICATION (Sends to target users or all other team members)
+    // 2. REMOTE CROSS-DEVICE PUSH NOTIFICATION
+    await notificationService.sendRemotePush(teamId, title, desc, typeKey, targetUserIds);
+  },
+
+  /**
+   * Sends remote Expo push notifications to target users or all other team members
+   * without creating a duplicate Firestore notifications document.
+   */
+  sendRemotePush: async (
+    teamId: string,
+    title: string,
+    desc: string,
+    notifType?: NotificationType,
+    targetUserIds?: string[]
+  ) => {
+    if (!teamId) return;
+    const typeKey = notifType || 'newExpense';
+
     try {
       const currentUserId = auth.currentUser?.uid;
       const recipientTokensSet = new Set<string>();

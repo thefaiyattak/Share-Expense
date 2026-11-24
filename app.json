@@ -2,7 +2,7 @@
   "expo": {
     "name": "Share Expense",
     "slug": "expense_tracker_rn",
-    "version": "1.0.16",
+    "version": "1.0.17",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -18,10 +18,10 @@
     "android": {
       "package": "com.fyntech.expensetracker",
       "googleServicesFile": "./android/app/google-services.json",
-      "versionCode": 50,
+      "versionCode": 51,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/android-icon-foreground.png"
+        "foregroundImage": "./assets/icon.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -47,7 +47,7 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#FFFFFF",
-          "image": "./assets/icon.png",
+          "image": "./assets/splash-icon.png",
           "resizeMode": "contain"
         }
       ]

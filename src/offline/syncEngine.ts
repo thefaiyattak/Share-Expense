@@ -114,6 +114,11 @@ export class SyncEngine {
 
           // Success: remove op from outbox
           await outbox.markDone(op.opId);
+
+          // Dispatch real-time remote push notification (fire-and-forget, never blocks sync)
+          if (!this.customRunner) {
+            sendPushAfterSync(op).catch(() => {});
+          }
         } catch (err: any) {
           console.warn(`[SyncEngine] Op ${op.opId} (${op.type}) failed:`, err?.message || err);
 
@@ -139,6 +144,76 @@ export class SyncEngine {
 }
 
 export const syncEngine = new SyncEngine();
+
+async function sendPushAfterSync(op: OutboxOp): Promise<void> {
+  if (!op.teamId) return;
+  const { notificationService } = await import('../services/notificationService');
+  const p = op.payload || {};
+
+  switch (op.type) {
+    case 'addExpense': {
+      await notificationService.sendRemotePush(
+        op.teamId,
+        'New Expense Added',
+        `${p.userName || 'Someone'} added "${p.itemName || 'Expense'}"`,
+        'newExpense'
+      );
+      break;
+    }
+    case 'addExpenses': {
+      const items = Array.isArray(p) ? p : p.expenses || [];
+      if (items.length > 0) {
+        await notificationService.sendRemotePush(
+          op.teamId,
+          'Batch Expenses Added',
+          `Added ${items.length} new items`,
+          'newExpense'
+        );
+      }
+      break;
+    }
+    case 'updateExpense': {
+      await notificationService.sendRemotePush(
+        op.teamId,
+        'Expense Updated',
+        `${p.userName || 'Someone'} updated "${p.itemName || 'Expense'}"`,
+        'editExpense'
+      );
+      break;
+    }
+    case 'deleteExpense': {
+      await notificationService.sendRemotePush(
+        op.teamId,
+        'Expense Deleted',
+        `${p.userName || 'Someone'} deleted "${p.itemName || 'Expense'}"`,
+        'editExpense'
+      );
+      break;
+    }
+    case 'addLoan': {
+      await notificationService.sendRemotePush(
+        op.teamId,
+        'Personal Loan Recorded',
+        `${p.lenderName || 'Someone'} gave ${p.amount ?? ''} to ${p.borrowerName || 'someone'}`,
+        'moneyCircle',
+        [p.lenderId, p.borrowerId].filter(Boolean)
+      );
+      break;
+    }
+    case 'settleLoan': {
+      if (p.lenderId || p.borrowerId) {
+        await notificationService.sendRemotePush(
+          op.teamId,
+          'Personal Loan Settled',
+          `A Money Circle loan was marked as settled`,
+          'moneyCircle',
+          [p.lenderId, p.borrowerId].filter(Boolean)
+        );
+      }
+      break;
+    }
+  }
+}
 
 /**
  * High-level helper to enqueue a write, update optimistic UI state,

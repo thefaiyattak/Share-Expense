@@ -138,6 +138,21 @@ export const executors: Record<string, ExecutorFn> = {
       newData: cleaned,
       timestamp: serverTimestamp(),
     });
+
+    if (op.teamId) {
+      const notifRef = doc(collection(db, 'notifications'));
+      const notifDesc = `${updateData.userName || 'Someone'} updated "${updateData.itemName || 'Expense'}"`;
+      tx.set(notifRef, {
+        teamId: op.teamId,
+        title: 'Expense Updated',
+        desc: notifDesc,
+        description: notifDesc,
+        notifType: 'editExpense',
+        type: 'expense_updated',
+        createdAt: serverTimestamp(),
+        readBy: [op.uid],
+      });
+    }
   },
 
   deleteExpense: async (tx, op) => {
@@ -157,6 +172,21 @@ export const executors: Record<string, ExecutorFn> = {
       previousData: op.payload?.previousData || {},
       timestamp: serverTimestamp(),
     });
+
+    if (op.teamId) {
+      const notifRef = doc(collection(db, 'notifications'));
+      const notifDesc = `${op.payload?.userName || 'Someone'} deleted "${op.payload?.itemName || 'Expense'}"`;
+      tx.set(notifRef, {
+        teamId: op.teamId,
+        title: 'Expense Deleted',
+        desc: notifDesc,
+        description: notifDesc,
+        notifType: 'editExpense',
+        type: 'expense_deleted',
+        createdAt: serverTimestamp(),
+        readBy: [op.uid],
+      });
+    }
   },
 
   setAttendance: async (tx, op) => {
